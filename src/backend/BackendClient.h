@@ -2,13 +2,14 @@
 #define BACKEND_CLIENT_H
 
 #include <stdint.h>
+#include "../commands/Command.h"
 
 #include "../network/NetworkStatus.h"
 
 namespace BackendClient {
 
 void begin();
-bool sendHeartbeat(const NetworkStatus &status, uint8_t failures);
+HeartbeatResponse sendHeartbeat(const NetworkStatus &status, uint8_t failures);
 
 }
 
