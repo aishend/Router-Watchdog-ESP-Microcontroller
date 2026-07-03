@@ -9,7 +9,7 @@ namespace {
 void writeRelay(bool active)
 {
     bool drive_high = AppConfig::RELAY_ACTIVE_LOW ? !active : active;
-    digitalWrite(AppConfig::RELAY_GPIO, drive_high ? HIGH : LOW);
+    digitalWrite(AppConfig::RELAY_GPIO, drive_high ? LOW : HIGH);
 }
 
 }

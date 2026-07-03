@@ -12,13 +12,11 @@ namespace {
 enum class RecoveryState {
     Monitoring,
     PowerOff,
-    BootWait,
-    Cooldown,
+    RecoveryWait,
 };
 
 struct WatchdogState {
     uint8_t consecutive_failures = 0;
-    uint8_t consecutive_backend_failures = 0;
     unsigned long last_check_ms = 0;
     unsigned long recovery_until_ms = 0;
     bool last_wifi_connected = false;
@@ -78,24 +76,15 @@ void continueRecovery(unsigned long now)
         Serial.println("[RECOVERY] relay OFF, router power restored");
         Relay::turnOff();
 
-        Serial.print("[RECOVERY] waiting for router boot (");
-        Serial.print(AppConfig::ROUTER_BOOT_WAIT_TIME_MS);
+        Serial.print("[RECOVERY] waiting for router recovery (");
+        Serial.print(AppConfig::ROUTER_RECOVERY_WAIT_TIME_MS);
         Serial.println(" ms)");
-        state.recovery_state = RecoveryState::BootWait;
-        state.recovery_until_ms = now + AppConfig::ROUTER_BOOT_WAIT_TIME_MS;
+        state.recovery_state = RecoveryState::RecoveryWait;
+        state.recovery_until_ms = now + AppConfig::ROUTER_RECOVERY_WAIT_TIME_MS;
         return;
     }
 
-    if (state.recovery_state == RecoveryState::BootWait) {
-        Serial.print("[RECOVERY] cooldown active (");
-        Serial.print(AppConfig::RECOVERY_COOLDOWN_MS);
-        Serial.println(" ms)");
-        state.recovery_state = RecoveryState::Cooldown;
-        state.recovery_until_ms = now + AppConfig::RECOVERY_COOLDOWN_MS;
-        return;
-    }
-
-    if (state.recovery_state == RecoveryState::Cooldown) {
+    if (state.recovery_state == RecoveryState::RecoveryWait) {
         state.consecutive_failures = 0;
         state.have_last_status = false;
         state.last_check_ms = 0;
@@ -133,28 +122,12 @@ void rememberStatus(const NetworkStatus &status)
     state.have_last_status = true;
 }
 
-void updateBackendFailureCount(bool heartbeat_sent)
-{
-    if (heartbeat_sent) {
-        if (state.consecutive_backend_failures > 0) {
-            Serial.println("[BACKEND] Heartbeat failure count cleared");
-        }
-        state.consecutive_backend_failures = 0;
-        return;
-    }
-
-    state.consecutive_backend_failures++;
-    Serial.print("[BACKEND] Heartbeat failure count ");
-    Serial.println(state.consecutive_backend_failures);
-}
-
 }
 
 namespace RouterWatchdog {
 
 void begin()
 {
-    Serial.println("[WATCHDOG] Task started");
     Serial.println("[WATCHDOG] Monitoring started");
 }
 
@@ -179,12 +152,9 @@ void tick(unsigned long now)
     }
 
     rememberStatus(status);
-    bool heartbeat_sent = BackendClient::sendHeartbeat(
+    BackendClient::sendHeartbeat(
         status,
         state.consecutive_failures);
-    if (status.wifi_connected) {
-        updateBackendFailureCount(heartbeat_sent);
-    }
 
     if (state.consecutive_failures >= AppConfig::MAX_CONSECUTIVE_FAILURES) {
         startRecovery(now);

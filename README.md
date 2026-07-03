@@ -67,6 +67,8 @@ Most important public/default fields:
 STARTUP_GRACE_PERIOD_MS
 CHECK_INTERVAL_MS
 MAX_CONSECUTIVE_FAILURES
+ROUTER_POWER_OFF_TIME_MS
+ROUTER_RECOVERY_WAIT_TIME_MS
 RELAY_GPIO
 RELAY_ACTIVE_LOW
 BACKEND_INSECURE_TLS
@@ -110,22 +112,15 @@ pio device monitor
 
 Configured speed: `74880`.
 
-Expected startup output:
+Typical startup output includes:
 
 ```text
 [BOOT] Router watchdog starting
-[RELAY] Initializing
-[RELAY] OFF
-[NETWORK] Initialization started
-[NETWORK] Wi-Fi connection requested
-[BACKEND] Client initialized
-[BACKEND] WARNING: TLS certificate validation disabled
-[WATCHDOG] Task started
 [WATCHDOG] Monitoring started
 [BOOT] Waiting for Wi-Fi startup grace period (15000 ms)
 ```
 
-Expected normal operation:
+Typical normal operation includes:
 
 ```text
 [NETWORK] Wi-Fi connected | IP=192.168.1.100 | Gateway=192.168.1.1 | Internet=OK | Failures=0
@@ -140,11 +135,10 @@ When the number of consecutive failures reaches `MAX_CONSECUTIVE_FAILURES`, the 
 1. Turns the relay on and cuts router power.
 2. Waits for `ROUTER_POWER_OFF_TIME_MS`.
 3. Turns the relay off and restores power.
-4. Waits for `ROUTER_BOOT_WAIT_TIME_MS`.
-5. Waits for the cooldown period defined by `RECOVERY_COOLDOWN_MS`.
-6. Resumes monitoring.
+4. Waits for `ROUTER_RECOVERY_WAIT_TIME_MS`.
+5. Resumes monitoring.
 
-The recovery flow is state-based rather than implemented with long blocking delays, so the firmware loop keeps running while it waits for power-off, boot, and cooldown timers.
+The recovery flow is state-based rather than implemented with long blocking delays, so the firmware loop keeps running while it waits for power-off and recovery timers.
 
 ## Backend
 
