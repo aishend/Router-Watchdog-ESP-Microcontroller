@@ -15,10 +15,6 @@ String buildHeartbeatJson(const NetworkStatus &status, uint8_t failures)
 
     json += "{\"deviceId\":\"";
     json += AppConfig::DEVICE_ID;
-    json += "\",\"wifiConnected\":";
-    json += status.wifi_connected ? "true" : "false";
-    json += ",\"internetConnected\":";
-    json += status.internet_connected ? "true" : "false";
     json += ",\"ip\":\"";
     json += status.ip_address.toString();
     json += "\",\"gateway\":\"";
