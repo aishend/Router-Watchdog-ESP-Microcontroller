@@ -6,10 +6,11 @@
 
 #include "../network/NetworkStatus.h"
 
-namespace BackendClient {
+namespace BackendClient
+{
 
-void begin();
-HeartbeatResponse sendHeartbeat(const NetworkStatus &status, uint8_t failures);
+    void begin();
+    HeartbeatResponse sendHeartbeat(const NetworkStatus &status, uint8_t failures);
 
 }
 

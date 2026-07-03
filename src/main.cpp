@@ -6,12 +6,13 @@
 #include "network/NetworkManager.h"
 #include "watchdog/RouterWatchdog.h"
 
-namespace {
-
-bool startupGracePeriodElapsed(unsigned long now)
+namespace
 {
-    return now >= AppConfig::STARTUP_GRACE_PERIOD_MS;
-}
+
+    bool startupGracePeriodElapsed(unsigned long now)
+    {
+        return now >= AppConfig::STARTUP_GRACE_PERIOD_MS;
+    }
 
 }
 
@@ -21,7 +22,8 @@ void setup()
     Serial.println();
     Serial.println("[BOOT] Router watchdog starting");
 
-    if (AppConfig::hasPlaceholderSecrets()) {
+    if (AppConfig::hasPlaceholderSecrets())
+    {
         Serial.println("[BOOT] WARNING: placeholder config detected, check AppSecrets.h");
     }
 
@@ -39,7 +41,8 @@ void loop()
 {
     unsigned long now = millis();
 
-    if (startupGracePeriodElapsed(now)) {
+    if (startupGracePeriodElapsed(now))
+    {
         RouterWatchdog::tick(now);
     }
 

@@ -3,10 +3,11 @@
 
 #include "NetworkStatus.h"
 
-namespace NetworkManager {
+namespace NetworkManager
+{
 
-void begin();
-NetworkStatus checkStatus();
+    void begin();
+    NetworkStatus checkStatus();
 
 }
 

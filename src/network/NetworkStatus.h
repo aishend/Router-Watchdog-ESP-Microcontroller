@@ -3,7 +3,8 @@
 
 #include <IPAddress.h>
 
-struct NetworkStatus {
+struct NetworkStatus
+{
     bool wifi_connected = false;
     bool internet_connected = false;
     IPAddress ip_address = IPAddress(0, 0, 0, 0);

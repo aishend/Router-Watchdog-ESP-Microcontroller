@@ -1,11 +1,12 @@
 #ifndef RELAY_H
 #define RELAY_H
 
-namespace Relay {
+namespace Relay
+{
 
-void begin();
-void turnOn();
-void turnOff();
+    void begin();
+    void turnOn();
+    void turnOff();
 
 }
 

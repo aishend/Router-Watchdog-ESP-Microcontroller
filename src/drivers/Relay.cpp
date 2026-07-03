@@ -4,36 +4,38 @@
 
 #include "../config/AppConfig.h"
 
-namespace {
-
-void writeRelay(bool active)
+namespace
 {
-    bool drive_high = AppConfig::RELAY_ACTIVE_LOW ? !active : active;
-    digitalWrite(AppConfig::RELAY_GPIO, drive_high ? LOW : HIGH);
-}
+
+    void writeRelay(bool active)
+    {
+        bool drive_high = AppConfig::RELAY_ACTIVE_LOW ? !active : active;
+        digitalWrite(AppConfig::RELAY_GPIO, drive_high ? LOW : HIGH);
+    }
 
 }
 
-namespace Relay {
-
-void begin()
+namespace Relay
 {
-    Serial.println("[RELAY] Initializing");
 
-    pinMode(AppConfig::RELAY_GPIO, OUTPUT);
-    writeRelay(false);
+    void begin()
+    {
+        Serial.println("[RELAY] Initializing");
 
-    Serial.println("[RELAY] OFF");
-}
+        pinMode(AppConfig::RELAY_GPIO, OUTPUT);
+        writeRelay(false);
 
-void turnOn()
-{
-    writeRelay(true);
-}
+        Serial.println("[RELAY] OFF");
+    }
 
-void turnOff()
-{
-    writeRelay(false);
-}
+    void turnOn()
+    {
+        writeRelay(true);
+    }
+
+    void turnOff()
+    {
+        writeRelay(false);
+    }
 
 }
