@@ -4,7 +4,7 @@
 namespace RouterWatchdog {
 
 void begin();
-void tick();
+void tick(unsigned long now);
 
 }
 

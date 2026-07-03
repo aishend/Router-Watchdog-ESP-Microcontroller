@@ -8,5 +8,6 @@
 #define ROUTER_WATCHDOG_WIFI_PASSWORD "your-wifi-password"
 #define ROUTER_WATCHDOG_BACKEND_URL "https://your-api.example.com/api/v1/heartbeat"
 #define ROUTER_WATCHDOG_DEVICE_ID "router-watchdog-001"
+#define ROUTER_WATCHDOG_BACKEND_INSECURE_TLS true
 
 #endif

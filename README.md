@@ -56,6 +56,7 @@ Then edit `src/config/AppSecrets.h`:
 #define ROUTER_WATCHDOG_WIFI_PASSWORD "your-wifi-password"
 #define ROUTER_WATCHDOG_BACKEND_URL "https://your-api.example.com/api/v1/heartbeat"
 #define ROUTER_WATCHDOG_DEVICE_ID "router-watchdog-001"
+#define ROUTER_WATCHDOG_BACKEND_INSECURE_TLS true
 ```
 
 `src/config/AppSecrets.h` is ignored by Git and must not be committed.
@@ -68,11 +69,12 @@ CHECK_INTERVAL_MS
 MAX_CONSECUTIVE_FAILURES
 RELAY_GPIO
 RELAY_ACTIVE_LOW
+BACKEND_INSECURE_TLS
 ```
 
 Do not commit real Wi-Fi credentials, private backend URLs, or customer/company identifiers.
 
-Note: the HTTPS client uses `setInsecure()`. The connection is encrypted, but the server certificate is not validated.
+Note: `BACKEND_INSECURE_TLS` defaults to `true` for MVP convenience. The connection is encrypted, but the server certificate is not validated while this option is enabled.
 
 ## Build
 
@@ -117,6 +119,7 @@ Expected startup output:
 [NETWORK] Initialization started
 [NETWORK] Wi-Fi connection requested
 [BACKEND] Client initialized
+[BACKEND] WARNING: TLS certificate validation disabled
 [WATCHDOG] Task started
 [WATCHDOG] Monitoring started
 [BOOT] Waiting for Wi-Fi startup grace period (15000 ms)
@@ -141,6 +144,8 @@ When the number of consecutive failures reaches `MAX_CONSECUTIVE_FAILURES`, the 
 5. Waits for the cooldown period defined by `RECOVERY_COOLDOWN_MS`.
 6. Resumes monitoring.
 
+The recovery flow is state-based rather than implemented with long blocking delays, so the firmware loop keeps running while it waits for power-off, boot, and cooldown timers.
+
 ## Backend
 
 The heartbeat payload has this format:
@@ -148,8 +153,6 @@ The heartbeat payload has this format:
 ```json
 {
   "deviceId": "router-watchdog-001",
-  "wifiConnected": true,
-  "internetConnected": true,
   "ip": "192.168.1.100",
   "gateway": "192.168.1.1",
   "failures": 0,

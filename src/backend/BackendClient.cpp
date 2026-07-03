@@ -35,6 +35,9 @@ namespace BackendClient {
 void begin()
 {
     Serial.println("[BACKEND] Client initialized");
+    if (AppConfig::BACKEND_INSECURE_TLS) {
+        Serial.println("[BACKEND] WARNING: TLS certificate validation disabled");
+    }
 }
 
 bool sendHeartbeat(const NetworkStatus &status, uint8_t failures)
@@ -49,7 +52,9 @@ bool sendHeartbeat(const NetworkStatus &status, uint8_t failures)
     Serial.println(AppConfig::BACKEND_URL);
 
     BearSSL::WiFiClientSecure client;
-    client.setInsecure();
+    if (AppConfig::BACKEND_INSECURE_TLS) {
+        client.setInsecure();
+    }
     client.setBufferSizes(512, 512);
 
     HTTPClient http;
@@ -75,7 +80,12 @@ bool sendHeartbeat(const NetworkStatus &status, uint8_t failures)
     Serial.println(status_code);
 
     http.end();
-    return status_code >= 200 && status_code < 300;
+    bool accepted = status_code >= 200 && status_code < 300;
+    if (!accepted) {
+        Serial.println("[BACKEND] Heartbeat rejected by backend");
+    }
+
+    return accepted;
 }
 
 }

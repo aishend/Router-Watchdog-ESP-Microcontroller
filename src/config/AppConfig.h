@@ -2,6 +2,7 @@
 #define APP_CONFIG_H
 
 #include <Arduino.h>
+#include <string.h>
 
 #if __has_include("AppSecrets.h")
 #include "AppSecrets.h"
@@ -17,6 +18,10 @@
 
 #ifndef ROUTER_WATCHDOG_BACKEND_URL
 #define ROUTER_WATCHDOG_BACKEND_URL "https://your-api-endpoint"
+#endif
+
+#ifndef ROUTER_WATCHDOG_BACKEND_INSECURE_TLS
+#define ROUTER_WATCHDOG_BACKEND_INSECURE_TLS true
 #endif
 
 #ifndef ROUTER_WATCHDOG_DEVICE_ID
@@ -36,6 +41,7 @@ constexpr uint16_t INTERNET_TEST_TIMEOUT_MS = 2000;
 
 constexpr const char *BACKEND_URL = ROUTER_WATCHDOG_BACKEND_URL;
 constexpr const char *DEVICE_ID = ROUTER_WATCHDOG_DEVICE_ID;
+constexpr bool BACKEND_INSECURE_TLS = ROUTER_WATCHDOG_BACKEND_INSECURE_TLS;
 constexpr uint16_t BACKEND_TIMEOUT_MS = 10000;
 
 constexpr uint8_t MAX_CONSECUTIVE_FAILURES = 3;
@@ -47,6 +53,13 @@ constexpr unsigned long RECOVERY_COOLDOWN_MS = 120000;
 
 constexpr uint8_t RELAY_GPIO = 4; // NodeMCU D2
 constexpr bool RELAY_ACTIVE_LOW = false;
+
+inline bool hasPlaceholderSecrets()
+{
+    return strcmp(WIFI_SSID, "your-wifi-name") == 0 ||
+        strcmp(WIFI_PASSWORD, "your-wifi-password") == 0 ||
+        strcmp(BACKEND_URL, "https://your-api-endpoint") == 0;
+}
 
 }
 

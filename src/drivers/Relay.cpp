@@ -28,13 +28,11 @@ void begin()
 
 void turnOn()
 {
-    Serial.println("[RELAY] ON");
     writeRelay(true);
 }
 
 void turnOff()
 {
-    Serial.println("[RELAY] OFF");
     writeRelay(false);
 }
 
