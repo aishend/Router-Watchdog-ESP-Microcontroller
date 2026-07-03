@@ -5,7 +5,7 @@
 
 namespace CommandHandler
 {
-    void execute(CommandType command);
+    void execute(const PendingCommand &command);
 }
 
 #endif

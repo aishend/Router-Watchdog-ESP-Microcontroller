@@ -8,9 +8,9 @@
 namespace CommandHandler
 {
 
-    void execute(CommandType command)
+    void execute(const PendingCommand &command)
     {
-        switch (command)
+        switch (command.type)
         {
         case CommandType::RebootRouter:
             Serial.println("[COMMAND] Executing REBOOT_ROUTER");

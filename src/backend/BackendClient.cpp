@@ -66,12 +66,27 @@ namespace
             return response;
         }
 
-        const char *command = doc["command"] | "NONE";
-        response.command = parseCommand(String(command));
+        JsonVariant command = doc["command"];
+
+        if (command.isNull())
+        {
+            return response;
+        }
+
+        const char *command_id = command["id"] | "";
+        const char *command_type = command["type"] | "NONE";
+
+        response.command.has_command = true;
+        response.command.id = command_id;
+        response.command.type = parseCommand(String(command_type));
+
+        Serial.print("[BACKEND] Command id=");
+        Serial.print(response.command.id);
+        Serial.print(" type=");
+        Serial.println(command_type);
 
         return response;
     }
-
 }
 
 namespace BackendClient

@@ -1,5 +1,6 @@
 #ifndef COMMAND_H
 #define COMMAND_H
+#include <Arduino.h>
 
 enum class CommandType
 {
@@ -8,10 +9,17 @@ enum class CommandType
     RebootDevice
 };
 
+struct PendingCommand
+{
+    bool has_command = false;
+    String id;
+    CommandType type = CommandType::None;
+};
+
 struct HeartbeatResponse
 {
     bool accepted = false;
-    CommandType command = CommandType::None;
+    PendingCommand command;
 };
 
 #endif

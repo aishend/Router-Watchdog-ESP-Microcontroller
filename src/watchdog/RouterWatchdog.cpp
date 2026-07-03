@@ -10,7 +10,6 @@
 
 namespace
 {
-
     enum class RecoveryState
     {
         Monitoring,
@@ -68,6 +67,7 @@ namespace
 
         Serial.println("[RECOVERY] relay ON, router power removed");
         Relay::turnOn();
+
         state.recovery_state = RecoveryState::PowerOff;
         state.recovery_until_ms = now + AppConfig::ROUTER_POWER_OFF_TIME_MS;
     }
@@ -88,6 +88,7 @@ namespace
             Serial.print("[RECOVERY] waiting for router recovery (");
             Serial.print(AppConfig::ROUTER_RECOVERY_WAIT_TIME_MS);
             Serial.println(" ms)");
+
             state.recovery_state = RecoveryState::RecoveryWait;
             state.recovery_until_ms = now + AppConfig::ROUTER_RECOVERY_WAIT_TIME_MS;
             return;
@@ -99,6 +100,7 @@ namespace
             state.have_last_status = false;
             state.last_check_ms = 0;
             state.recovery_state = RecoveryState::Monitoring;
+
             Serial.println("[WATCHDOG] Monitoring resumed");
         }
     }
@@ -108,6 +110,7 @@ namespace
         if (check_failed)
         {
             state.consecutive_failures++;
+
             Serial.print("[WATCHDOG] Failure count ");
             Serial.print(state.consecutive_failures);
             Serial.print("/");
@@ -134,15 +137,24 @@ namespace
         state.last_internet_connected = status.internet_connected;
         state.have_last_status = true;
     }
-
 }
 
 namespace RouterWatchdog
 {
-
     void begin()
     {
         Serial.println("[WATCHDOG] Monitoring started");
+    }
+
+    void requestRecovery(unsigned long now)
+    {
+        if (state.recovery_state != RecoveryState::Monitoring)
+        {
+            Serial.println("[WATCHDOG] Recovery request ignored, already recovering");
+            return;
+        }
+
+        startRecovery(now);
     }
 
     void tick(unsigned long now)
@@ -168,22 +180,19 @@ namespace RouterWatchdog
         }
 
         rememberStatus(status);
+
         HeartbeatResponse response = BackendClient::sendHeartbeat(
             status,
             state.consecutive_failures);
 
-        if (response.command == CommandType::RebootRouter)
-        {
-            startRecovery(now);
-        }
-        else if (response.command != CommandType::None)
+        if (response.command.has_command)
         {
             CommandHandler::execute(response.command);
         }
+
         if (state.consecutive_failures >= AppConfig::MAX_CONSECUTIVE_FAILURES)
         {
-            startRecovery(now);
+            requestRecovery(now);
         }
     }
-
 }
