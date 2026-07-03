@@ -1,0 +1,41 @@
+#include "Relay.h"
+
+#include <Arduino.h>
+
+#include "../config/AppConfig.h"
+
+namespace {
+
+void writeRelay(bool active)
+{
+    bool drive_high = AppConfig::RELAY_ACTIVE_LOW ? !active : active;
+    digitalWrite(AppConfig::RELAY_GPIO, drive_high ? HIGH : LOW);
+}
+
+}
+
+namespace Relay {
+
+void begin()
+{
+    Serial.println("[RELAY] Initializing");
+
+    pinMode(AppConfig::RELAY_GPIO, OUTPUT);
+    writeRelay(false);
+
+    Serial.println("[RELAY] OFF");
+}
+
+void turnOn()
+{
+    Serial.println("[RELAY] ON");
+    writeRelay(true);
+}
+
+void turnOff()
+{
+    Serial.println("[RELAY] OFF");
+    writeRelay(false);
+}
+
+}
