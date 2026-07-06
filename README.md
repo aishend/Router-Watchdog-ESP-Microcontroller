@@ -56,10 +56,19 @@ Then edit `src/config/AppSecrets.h`:
 #define ROUTER_WATCHDOG_WIFI_PASSWORD "your-wifi-password"
 #define ROUTER_WATCHDOG_BACKEND_URL "https://your-api.example.com/api/v1/heartbeat"
 #define ROUTER_WATCHDOG_DEVICE_ID "router-watchdog-001"
+#define ROUTER_WATCHDOG_BACKEND_SECURE true
 #define ROUTER_WATCHDOG_BACKEND_INSECURE_TLS true
 ```
 
 `src/config/AppSecrets.h` is ignored by Git and must not be committed.
+
+Use `ROUTER_WATCHDOG_BACKEND_SECURE true` for HTTPS backends like Render.
+Use `ROUTER_WATCHDOG_BACKEND_SECURE false` for local HTTP backends, for example:
+
+```cpp
+#define ROUTER_WATCHDOG_BACKEND_URL "http://192.168.20.14:8080/api/v1/heartbeat"
+#define ROUTER_WATCHDOG_BACKEND_SECURE false
+```
 
 Most important public/default fields:
 
@@ -71,12 +80,13 @@ ROUTER_POWER_OFF_TIME_MS
 ROUTER_RECOVERY_WAIT_TIME_MS
 RELAY_GPIO
 RELAY_ACTIVE_LOW
+BACKEND_SECURE
 BACKEND_INSECURE_TLS
 ```
 
 Do not commit real Wi-Fi credentials, private backend URLs, or customer/company identifiers.
 
-Note: `BACKEND_INSECURE_TLS` defaults to `true` for MVP convenience. The connection is encrypted, but the server certificate is not validated while this option is enabled.
+Note: `BACKEND_INSECURE_TLS` only applies when `BACKEND_SECURE` is `true`. It defaults to `true` for MVP convenience. The connection is encrypted, but the server certificate is not validated while this option is enabled.
 
 ## Build
 

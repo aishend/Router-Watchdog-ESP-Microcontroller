@@ -2,8 +2,9 @@
 
 #include <Arduino.h>
 #include <ESP8266HTTPClient.h>
+#include <WiFiClient.h>
 #include <WiFiClientSecureBearSSL.h>
-
+#include <ESP8266WiFi.h>
 #include "../config/AppConfig.h"
 #include <ArduinoJson.h>
 #include "../commands/Command.h"
@@ -14,19 +15,33 @@ namespace
     String buildHeartbeatJson(const NetworkStatus &status, uint8_t failures)
     {
         String json;
-        json.reserve(220);
+        json.reserve(300);
 
         json += "{\"deviceId\":\"";
         json += AppConfig::DEVICE_ID;
+
         json += "\",\"ip\":\"";
         json += status.ip_address.toString();
+
         json += "\",\"gateway\":\"";
         json += status.gateway_address.toString();
+
         json += "\",\"failures\":";
         json += String(static_cast<unsigned int>(failures));
+
         json += ",\"uptime\":";
         json += String(millis() / 1000UL);
-        json += "}";
+
+        json += ",\"rssi\":";
+        json += String(WiFi.RSSI());
+
+        json += ",\"freeHeap\":";
+        json += String(ESP.getFreeHeap());
+
+        json += ",\"firmwareVersion\":\"";
+        json += AppConfig::FIRMWARE_VERSION;
+
+        json += "\"}";
 
         return json;
     }
@@ -87,6 +102,56 @@ namespace
 
         return response;
     }
+
+    String commandResultStatusToString(CommandResultStatus status)
+    {
+        switch (status)
+        {
+        case CommandResultStatus::Completed:
+            return "COMPLETED";
+
+        case CommandResultStatus::Failed:
+            return "FAILED";
+
+        default:
+            return "FAILED";
+        }
+    }
+
+    String buildCommandResultJson(const CommandResult &result)
+    {
+        String json;
+        json.reserve(120);
+
+        json += "{\"commandId\":\"";
+        json += result.command_id;
+        json += "\",\"status\":\"";
+        json += commandResultStatusToString(result.status);
+        json += "\"}";
+
+        return json;
+    }
+
+    const char *backendProtocolLabel()
+    {
+        return AppConfig::BACKEND_SECURE ? "HTTPS" : "HTTP";
+    }
+
+    bool beginBackendRequest(HTTPClient &http, WiFiClient &plain_client, BearSSL::WiFiClientSecure &secure_client, const String &url)
+    {
+        if (!AppConfig::BACKEND_SECURE)
+        {
+            return http.begin(plain_client, url);
+        }
+
+        if (AppConfig::BACKEND_INSECURE_TLS)
+        {
+            secure_client.setInsecure();
+        }
+
+        secure_client.setBufferSizes(512, 512);
+        return http.begin(secure_client, url);
+    }
 }
 
 namespace BackendClient
@@ -95,7 +160,10 @@ namespace BackendClient
     void begin()
     {
         Serial.println("[BACKEND] Client initialized");
-        if (AppConfig::BACKEND_INSECURE_TLS)
+        Serial.print("[BACKEND] Transport=");
+        Serial.println(backendProtocolLabel());
+
+        if (AppConfig::BACKEND_SECURE && AppConfig::BACKEND_INSECURE_TLS)
         {
             Serial.println("[BACKEND] WARNING: TLS certificate validation disabled");
         }
@@ -112,22 +180,23 @@ namespace BackendClient
         }
 
         Serial.println("[BACKEND] Sending heartbeat");
-        Serial.print("[HTTPS] POST ");
+        Serial.print("[");
+        Serial.print(backendProtocolLabel());
+        Serial.print("] POST ");
         Serial.println(AppConfig::BACKEND_URL);
 
-        BearSSL::WiFiClientSecure client;
-        if (AppConfig::BACKEND_INSECURE_TLS)
-        {
-            client.setInsecure();
-        }
-        client.setBufferSizes(512, 512);
+        String url = String(AppConfig::BACKEND_URL);
+        WiFiClient plain_client;
+        BearSSL::WiFiClientSecure secure_client;
 
         HTTPClient http;
         http.setTimeout(AppConfig::BACKEND_TIMEOUT_MS);
 
-        if (!http.begin(client, AppConfig::BACKEND_URL))
+        if (!beginBackendRequest(http, plain_client, secure_client, url))
         {
-            Serial.println("[HTTPS] begin() failed");
+            Serial.print("[");
+            Serial.print(backendProtocolLabel());
+            Serial.println("] begin() failed");
             return response;
         }
 
@@ -137,18 +206,24 @@ namespace BackendClient
 
         if (status_code <= 0)
         {
-            Serial.print("[HTTPS] POST failed: ");
+            Serial.print("[");
+            Serial.print(backendProtocolLabel());
+            Serial.print("] POST failed: ");
             Serial.println(http.errorToString(status_code));
             http.end();
             return response;
         }
 
-        Serial.print("[HTTPS] Response status=");
+        Serial.print("[");
+        Serial.print(backendProtocolLabel());
+        Serial.print("] Response status=");
         Serial.println(status_code);
 
         String body = http.getString();
 
-        Serial.print("[HTTPS] Response body=");
+        Serial.print("[");
+        Serial.print(backendProtocolLabel());
+        Serial.print("] Response body=");
         Serial.println(body);
 
         response = parseHeartbeatResponse(status_code, body);
@@ -161,6 +236,68 @@ namespace BackendClient
         http.end();
 
         return response;
+    }
+
+    bool sendCommandResult(const CommandResult &result)
+    {
+        if (result.command_id.length() == 0)
+        {
+            Serial.println("[BACKEND] Command result skipped, missing command id");
+            return false;
+        }
+
+        String url = String(AppConfig::BACKEND_URL);
+        url.replace("/heartbeat", "/command-results");
+
+        Serial.println("[BACKEND] Sending command result");
+        Serial.print("[");
+        Serial.print(backendProtocolLabel());
+        Serial.print("] POST ");
+        Serial.println(url);
+
+        WiFiClient plain_client;
+        BearSSL::WiFiClientSecure secure_client;
+
+        HTTPClient http;
+        http.setTimeout(AppConfig::BACKEND_TIMEOUT_MS);
+
+        if (!beginBackendRequest(http, plain_client, secure_client, url))
+        {
+            Serial.print("[");
+            Serial.print(backendProtocolLabel());
+            Serial.println("] begin() failed");
+            return false;
+        }
+
+        http.addHeader("Content-Type", "application/json");
+
+        int status_code = http.POST(buildCommandResultJson(result));
+
+        if (status_code <= 0)
+        {
+            Serial.print("[");
+            Serial.print(backendProtocolLabel());
+            Serial.print("] POST command result failed: ");
+            Serial.println(http.errorToString(status_code));
+            http.end();
+            return false;
+        }
+
+        Serial.print("[");
+        Serial.print(backendProtocolLabel());
+        Serial.print("] Command result response status=");
+        Serial.println(status_code);
+
+        String body = http.getString();
+
+        Serial.print("[");
+        Serial.print(backendProtocolLabel());
+        Serial.print("] Command result response body=");
+        Serial.println(body);
+
+        http.end();
+
+        return status_code >= 200 && status_code < 300;
     }
 
 }

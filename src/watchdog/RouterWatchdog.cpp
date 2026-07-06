@@ -6,7 +6,7 @@
 #include "../config/AppConfig.h"
 #include "../drivers/Relay.h"
 #include "../network/NetworkManager.h"
-#include "../commands/CommandHandler.h"
+#include "../commands/CommandManager.h"
 
 namespace
 {
@@ -102,6 +102,7 @@ namespace
             state.recovery_state = RecoveryState::Monitoring;
 
             Serial.println("[WATCHDOG] Monitoring resumed");
+            CommandManager::notifyRouterRecoveryFinished();
         }
     }
 
@@ -187,7 +188,7 @@ namespace RouterWatchdog
 
         if (response.command.has_command)
         {
-            CommandHandler::execute(response.command);
+            CommandManager::handleCommand(response.command);
         }
 
         if (state.consecutive_failures >= AppConfig::MAX_CONSECUTIVE_FAILURES)

@@ -3,15 +3,14 @@
 
 #include <stdint.h>
 #include "../commands/Command.h"
-
+#include "../commands/CommandResult.h"
 #include "../network/NetworkStatus.h"
 
 namespace BackendClient
 {
-
     void begin();
     HeartbeatResponse sendHeartbeat(const NetworkStatus &status, uint8_t failures);
-
+    bool sendCommandResult(const CommandResult &result);
 }
 
 #endif

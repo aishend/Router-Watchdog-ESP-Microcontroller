@@ -4,31 +4,27 @@
 
 #include "../drivers/Relay.h"
 #include "../config/AppConfig.h"
-
+#include "../watchdog/RouterWatchdog.h"
 namespace CommandHandler
 {
 
-    void execute(const PendingCommand &command)
+    CommandExecutionState execute(const PendingCommand &command)
     {
         switch (command.type)
         {
         case CommandType::RebootRouter:
-            Serial.println("[COMMAND] Executing REBOOT_ROUTER");
-            Relay::turnOn();
-            delay(AppConfig::ROUTER_POWER_OFF_TIME_MS);
-            Relay::turnOff();
-            Serial.println("[COMMAND] Router reboot command finished");
-            break;
+            Serial.println("[COMMAND] REBOOT_ROUTER requested");
+            RouterWatchdog::requestRecovery(millis());
+            return CommandExecutionState::Running;
 
         case CommandType::RebootDevice:
-            Serial.println("[COMMAND] Executing REBOOT_DEVICE");
-            delay(200);
+            Serial.println("[COMMAND] REBOOT_DEVICE requested");
             ESP.restart();
-            break;
+            return CommandExecutionState::Running;
 
         case CommandType::None:
         default:
-            break;
+            return CommandExecutionState::Failed;
         }
     }
 

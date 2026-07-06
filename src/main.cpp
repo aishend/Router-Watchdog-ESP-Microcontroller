@@ -5,6 +5,7 @@
 #include "drivers/Relay.h"
 #include "network/NetworkManager.h"
 #include "watchdog/RouterWatchdog.h"
+#include "commands/CommandManager.h"
 
 namespace
 {
@@ -31,6 +32,7 @@ void setup()
     NetworkManager::begin();
     BackendClient::begin();
     RouterWatchdog::begin();
+    CommandManager::begin();
 
     Serial.print("[BOOT] Waiting for Wi-Fi startup grace period (");
     Serial.print(AppConfig::STARTUP_GRACE_PERIOD_MS);
@@ -44,6 +46,7 @@ void loop()
     if (startupGracePeriodElapsed(now))
     {
         RouterWatchdog::tick(now);
+        CommandManager::tick(now);
     }
 
     delay(10);

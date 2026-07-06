@@ -2,10 +2,10 @@
 #define COMMAND_HANDLER_H
 
 #include "Command.h"
-
+#include "CommandExecutionState.h"
 namespace CommandHandler
 {
-    void execute(const PendingCommand &command);
+    CommandExecutionState execute(const PendingCommand &command);
 }
 
 #endif
