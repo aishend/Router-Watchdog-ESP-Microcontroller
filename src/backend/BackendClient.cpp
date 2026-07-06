@@ -5,9 +5,11 @@
 #include <WiFiClient.h>
 #include <WiFiClientSecureBearSSL.h>
 #include <ESP8266WiFi.h>
-#include "../config/AppConfig.h"
 #include <ArduinoJson.h>
+
+#include "../config/AppConfig.h"
 #include "../commands/Command.h"
+#include "../logging/Logger.h"
 
 namespace
 {
@@ -46,6 +48,29 @@ namespace
         return json;
     }
 
+    String buildNetworkClientsReportJson(const DiscoveredClient *clients, uint8_t count)
+    {
+        JsonDocument doc;
+
+        doc["watchdogDeviceId"] = AppConfig::DEVICE_ID;
+
+        JsonArray clientsArray = doc["clients"].to<JsonArray>();
+
+        for (uint8_t i = 0; i < count; i++)
+        {
+            JsonObject client = clientsArray.add<JsonObject>();
+            client["ip"] = clients[i].ip.toString();
+            client["mac"] = clients[i].mac;
+            client["hostname"] = nullptr;
+            client["vendor"] = nullptr;
+        }
+
+        String json;
+        serializeJson(doc, json);
+
+        return json;
+    }
+
     CommandType parseCommand(const String &command)
     {
         if (command == "REBOOT_ROUTER")
@@ -76,8 +101,7 @@ namespace
 
         if (error)
         {
-            Serial.print("[BACKEND] Failed to parse response JSON: ");
-            Serial.println(error.c_str());
+            Log::errorf("BACKEND", "Failed to parse response JSON: %s", error.c_str());
             return response;
         }
 
@@ -91,14 +115,17 @@ namespace
         const char *command_id = command["id"] | "";
         const char *command_type = command["type"] | "NONE";
 
+        if (command_id[0] == '\0')
+        {
+            Log::warn("BACKEND", "Command ignored, missing id");
+            return response;
+        }
+
         response.command.has_command = true;
         response.command.id = command_id;
         response.command.type = parseCommand(String(command_type));
 
-        Serial.print("[BACKEND] Command id=");
-        Serial.print(response.command.id);
-        Serial.print(" type=");
-        Serial.println(command_type);
+        Log::infof("BACKEND", "Command received id=%s type=%s", response.command.id.c_str(), command_type);
 
         return response;
     }
@@ -137,20 +164,89 @@ namespace
         return AppConfig::BACKEND_SECURE ? "HTTPS" : "HTTP";
     }
 
-    bool beginBackendRequest(HTTPClient &http, WiFiClient &plain_client, BearSSL::WiFiClientSecure &secure_client, const String &url)
+    bool beginBackendRequest(HTTPClient &http,
+                             WiFiClient &plainClient,
+                             BearSSL::WiFiClientSecure &secureClient,
+                             const String &url)
     {
         if (!AppConfig::BACKEND_SECURE)
         {
-            return http.begin(plain_client, url);
+            return http.begin(plainClient, url);
         }
 
         if (AppConfig::BACKEND_INSECURE_TLS)
         {
-            secure_client.setInsecure();
+            secureClient.setInsecure();
         }
 
-        secure_client.setBufferSizes(512, 512);
-        return http.begin(secure_client, url);
+        secureClient.setBufferSizes(512, 512);
+        return http.begin(secureClient, url);
+    }
+
+    int postJson(const String &url, const String &payload, const char *label, String *responseBody = nullptr)
+    {
+        Log::infof("BACKEND", "Sending %s via %s POST %s", label, backendProtocolLabel(), url.c_str());
+
+        WiFiClient plainClient;
+        BearSSL::WiFiClientSecure secureClient;
+
+        HTTPClient http;
+        http.setTimeout(AppConfig::BACKEND_TIMEOUT_MS);
+
+        if (!beginBackendRequest(http, plainClient, secureClient, url))
+        {
+            Log::errorf("BACKEND", "%s begin() failed", backendProtocolLabel());
+            return -1;
+        }
+
+        http.addHeader("Content-Type", "application/json");
+
+        int statusCode = http.POST(payload);
+
+        if (statusCode <= 0)
+        {
+            Log::errorf(
+                "BACKEND",
+                "%s POST %s failed: %s",
+                backendProtocolLabel(),
+                label,
+                http.errorToString(statusCode).c_str());
+            http.end();
+            return statusCode;
+        }
+
+        Log::infof("BACKEND", "%s %s response status=%d", backendProtocolLabel(), label, statusCode);
+
+        String body = http.getString();
+
+        Log::debugf("BACKEND", "%s response body=%s", label, body.c_str());
+
+        if (responseBody != nullptr)
+        {
+            *responseBody = body;
+        }
+
+        http.end();
+        return statusCode;
+    }
+
+    String buildUrlForPath(const char *path)
+    {
+        String url = String(AppConfig::BACKEND_URL);
+
+        int apiIndex = url.indexOf("/api/v1/");
+
+        if (apiIndex >= 0)
+        {
+            url = url.substring(0, apiIndex);
+        }
+        else
+        {
+            url.replace("/heartbeat", "");
+        }
+
+        url += path;
+        return url;
     }
 }
 
@@ -159,13 +255,12 @@ namespace BackendClient
 
     void begin()
     {
-        Serial.println("[BACKEND] Client initialized");
-        Serial.print("[BACKEND] Transport=");
-        Serial.println(backendProtocolLabel());
+        Log::info("BACKEND", "Client initialized");
+        Log::infof("BACKEND", "Transport=%s", backendProtocolLabel());
 
         if (AppConfig::BACKEND_SECURE && AppConfig::BACKEND_INSECURE_TLS)
         {
-            Serial.println("[BACKEND] WARNING: TLS certificate validation disabled");
+            Log::warn("BACKEND", "TLS certificate validation disabled");
         }
     }
 
@@ -175,65 +270,25 @@ namespace BackendClient
 
         if (!status.wifi_connected)
         {
-            Serial.println("[BACKEND] Heartbeat skipped, Wi-Fi not connected");
+            Log::info("BACKEND", "Heartbeat skipped, Wi-Fi not connected");
             return response;
         }
-
-        Serial.println("[BACKEND] Sending heartbeat");
-        Serial.print("[");
-        Serial.print(backendProtocolLabel());
-        Serial.print("] POST ");
-        Serial.println(AppConfig::BACKEND_URL);
 
         String url = String(AppConfig::BACKEND_URL);
-        WiFiClient plain_client;
-        BearSSL::WiFiClientSecure secure_client;
+        String body;
+        int statusCode = postJson(url, buildHeartbeatJson(status, failures), "heartbeat", &body);
 
-        HTTPClient http;
-        http.setTimeout(AppConfig::BACKEND_TIMEOUT_MS);
-
-        if (!beginBackendRequest(http, plain_client, secure_client, url))
+        if (statusCode <= 0)
         {
-            Serial.print("[");
-            Serial.print(backendProtocolLabel());
-            Serial.println("] begin() failed");
             return response;
         }
 
-        http.addHeader("Content-Type", "application/json");
-
-        int status_code = http.POST(buildHeartbeatJson(status, failures));
-
-        if (status_code <= 0)
-        {
-            Serial.print("[");
-            Serial.print(backendProtocolLabel());
-            Serial.print("] POST failed: ");
-            Serial.println(http.errorToString(status_code));
-            http.end();
-            return response;
-        }
-
-        Serial.print("[");
-        Serial.print(backendProtocolLabel());
-        Serial.print("] Response status=");
-        Serial.println(status_code);
-
-        String body = http.getString();
-
-        Serial.print("[");
-        Serial.print(backendProtocolLabel());
-        Serial.print("] Response body=");
-        Serial.println(body);
-
-        response = parseHeartbeatResponse(status_code, body);
+        response = parseHeartbeatResponse(statusCode, body);
 
         if (!response.accepted)
         {
-            Serial.println("[BACKEND] Heartbeat rejected by backend");
+            Log::warn("BACKEND", "Heartbeat rejected by backend");
         }
-
-        http.end();
 
         return response;
     }
@@ -242,62 +297,34 @@ namespace BackendClient
     {
         if (result.command_id.length() == 0)
         {
-            Serial.println("[BACKEND] Command result skipped, missing command id");
+            Log::warn("BACKEND", "Command result skipped, missing command id");
             return false;
         }
 
-        String url = String(AppConfig::BACKEND_URL);
-        url.replace("/heartbeat", "/command-results");
+        String url = buildUrlForPath("/api/v1/command-results");
 
-        Serial.println("[BACKEND] Sending command result");
-        Serial.print("[");
-        Serial.print(backendProtocolLabel());
-        Serial.print("] POST ");
-        Serial.println(url);
+        int statusCode = postJson(url, buildCommandResultJson(result), "command result");
 
-        WiFiClient plain_client;
-        BearSSL::WiFiClientSecure secure_client;
+        return statusCode >= 200 && statusCode < 300;
+    }
 
-        HTTPClient http;
-        http.setTimeout(AppConfig::BACKEND_TIMEOUT_MS);
-
-        if (!beginBackendRequest(http, plain_client, secure_client, url))
+    bool sendNetworkClientsReport(const DiscoveredClient *clients, uint8_t count)
+    {
+        if (count == 0)
         {
-            Serial.print("[");
-            Serial.print(backendProtocolLabel());
-            Serial.println("] begin() failed");
+            Log::info("BACKEND", "Network clients report skipped, no clients found");
             return false;
         }
 
-        http.addHeader("Content-Type", "application/json");
+        String url = buildUrlForPath("/api/v1/network-clients/report");
 
-        int status_code = http.POST(buildCommandResultJson(result));
+        String payload = buildNetworkClientsReportJson(clients, count);
 
-        if (status_code <= 0)
-        {
-            Serial.print("[");
-            Serial.print(backendProtocolLabel());
-            Serial.print("] POST command result failed: ");
-            Serial.println(http.errorToString(status_code));
-            http.end();
-            return false;
-        }
+        Log::debugf("BACKEND", "Network clients payload=%s", payload.c_str());
 
-        Serial.print("[");
-        Serial.print(backendProtocolLabel());
-        Serial.print("] Command result response status=");
-        Serial.println(status_code);
+        int statusCode = postJson(url, payload, "network clients");
 
-        String body = http.getString();
-
-        Serial.print("[");
-        Serial.print(backendProtocolLabel());
-        Serial.print("] Command result response body=");
-        Serial.println(body);
-
-        http.end();
-
-        return status_code >= 200 && status_code < 300;
+        return statusCode >= 200 && statusCode < 300;
     }
 
 }

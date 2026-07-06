@@ -3,14 +3,15 @@
 #include <Arduino.h>
 
 #include "../config/AppConfig.h"
+#include "../logging/Logger.h"
 
 namespace
 {
 
     void writeRelay(bool active)
     {
-        bool drive_high = AppConfig::RELAY_ACTIVE_LOW ? !active : active;
-        digitalWrite(AppConfig::RELAY_GPIO, drive_high ? LOW : HIGH);
+        bool outputHigh = AppConfig::RELAY_ACTIVE_LOW ? !active : active;
+        digitalWrite(AppConfig::RELAY_GPIO, outputHigh ? HIGH : LOW);
     }
 
 }
@@ -20,12 +21,12 @@ namespace Relay
 
     void begin()
     {
-        Serial.println("[RELAY] Initializing");
+        Log::info("RELAY", "Initializing");
 
         pinMode(AppConfig::RELAY_GPIO, OUTPUT);
         writeRelay(false);
 
-        Serial.println("[RELAY] OFF");
+        Log::info("RELAY", "OFF");
     }
 
     void turnOn()

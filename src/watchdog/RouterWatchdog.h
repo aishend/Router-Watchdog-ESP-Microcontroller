@@ -5,7 +5,7 @@ namespace RouterWatchdog
 {
     void begin();
     void tick(unsigned long now);
-    void requestRecovery(unsigned long now);
+    bool requestRouterReboot();
 }
 
 #endif

@@ -2,7 +2,6 @@
 #define COMMAND_MANAGER_H
 
 #include "Command.h"
-#include "CommandExecutionState.h"
 
 namespace CommandManager
 {

@@ -3,12 +3,14 @@
 
 #include <Arduino.h>
 
-enum class CommandResultStatus {
+enum class CommandResultStatus
+{
     Completed,
     Failed
 };
 
-struct CommandResult {
+struct CommandResult
+{
     String command_id;
     CommandResultStatus status = CommandResultStatus::Completed;
 };

@@ -5,6 +5,7 @@
 #include "../backend/BackendClient.h"
 #include "../config/AppConfig.h"
 #include "../drivers/Relay.h"
+#include "../logging/Logger.h"
 #include "../network/NetworkManager.h"
 #include "../commands/CommandManager.h"
 
@@ -45,27 +46,25 @@ namespace
     {
         if (status.wifi_connected)
         {
-            Serial.print("[NETWORK] Wi-Fi connected | IP=");
-            Serial.print(status.ip_address);
-            Serial.print(" | Gateway=");
-            Serial.print(status.gateway_address);
-            Serial.print(" | Internet=");
-            Serial.print(status.internet_connected ? "OK" : "DOWN");
+            Log::infof(
+                "NETWORK",
+                "Wi-Fi connected | IP=%s | Gateway=%s | Internet=%s | Failures=%u",
+                status.ip_address.toString().c_str(),
+                status.gateway_address.toString().c_str(),
+                status.internet_connected ? "OK" : "DOWN",
+                state.consecutive_failures);
         }
         else
         {
-            Serial.print("[NETWORK] Wi-Fi not connected");
+            Log::infof("NETWORK", "Wi-Fi not connected | Failures=%u", state.consecutive_failures);
         }
-
-        Serial.print(" | Failures=");
-        Serial.println(state.consecutive_failures);
     }
 
     void startRecovery(unsigned long now)
     {
-        Serial.println("[WATCHDOG] Recovery triggered");
+        Log::warn("WATCHDOG", "Recovery triggered");
 
-        Serial.println("[RECOVERY] relay ON, router power removed");
+        Log::info("RECOVERY", "relay ON, router power removed");
         Relay::turnOn();
 
         state.recovery_state = RecoveryState::PowerOff;
@@ -82,12 +81,10 @@ namespace
 
         if (state.recovery_state == RecoveryState::PowerOff)
         {
-            Serial.println("[RECOVERY] relay OFF, router power restored");
+            Log::info("RECOVERY", "relay OFF, router power restored");
             Relay::turnOff();
 
-            Serial.print("[RECOVERY] waiting for router recovery (");
-            Serial.print(AppConfig::ROUTER_RECOVERY_WAIT_TIME_MS);
-            Serial.println(" ms)");
+            Log::infof("RECOVERY", "waiting for router recovery (%lu ms)", AppConfig::ROUTER_RECOVERY_WAIT_TIME_MS);
 
             state.recovery_state = RecoveryState::RecoveryWait;
             state.recovery_until_ms = now + AppConfig::ROUTER_RECOVERY_WAIT_TIME_MS;
@@ -101,7 +98,7 @@ namespace
             state.last_check_ms = 0;
             state.recovery_state = RecoveryState::Monitoring;
 
-            Serial.println("[WATCHDOG] Monitoring resumed");
+            Log::info("WATCHDOG", "Monitoring resumed");
             CommandManager::notifyRouterRecoveryFinished();
         }
     }
@@ -112,15 +109,16 @@ namespace
         {
             state.consecutive_failures++;
 
-            Serial.print("[WATCHDOG] Failure count ");
-            Serial.print(state.consecutive_failures);
-            Serial.print("/");
-            Serial.println(AppConfig::MAX_CONSECUTIVE_FAILURES);
+            Log::warnf(
+                "WATCHDOG",
+                "Failure count %u/%u",
+                state.consecutive_failures,
+                AppConfig::MAX_CONSECUTIVE_FAILURES);
         }
         else if (state.consecutive_failures > 0)
         {
             state.consecutive_failures = 0;
-            Serial.println("[WATCHDOG] Failure count cleared");
+            Log::info("WATCHDOG", "Failure count cleared");
         }
     }
 
@@ -144,18 +142,19 @@ namespace RouterWatchdog
 {
     void begin()
     {
-        Serial.println("[WATCHDOG] Monitoring started");
+        Log::info("WATCHDOG", "Monitoring started");
     }
 
-    void requestRecovery(unsigned long now)
+    bool requestRouterReboot()
     {
         if (state.recovery_state != RecoveryState::Monitoring)
         {
-            Serial.println("[WATCHDOG] Recovery request ignored, already recovering");
-            return;
+            Log::warn("WATCHDOG", "Recovery request ignored, already recovering");
+            return false;
         }
 
-        startRecovery(now);
+        startRecovery(millis());
+        return true;
     }
 
     void tick(unsigned long now)
@@ -193,7 +192,7 @@ namespace RouterWatchdog
 
         if (state.consecutive_failures >= AppConfig::MAX_CONSECUTIVE_FAILURES)
         {
-            requestRecovery(now);
+            requestRouterReboot();
         }
     }
 }

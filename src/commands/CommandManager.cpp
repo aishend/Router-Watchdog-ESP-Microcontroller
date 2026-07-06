@@ -2,77 +2,102 @@
 
 #include <Arduino.h>
 
-#include "CommandExecutionState.h"
-#include "CommandHandler.h"
-#include "CommandResult.h"
 #include "../backend/BackendClient.h"
+#include "../logging/Logger.h"
+#include "../watchdog/RouterWatchdog.h"
+#include "CommandResult.h"
 
 namespace
 {
-    PendingCommand currentCommand;
-    bool commandRunning = false;
+    PendingCommand pendingRouterCommand;
+    bool routerCommandInProgress = false;
 
-    void sendResult(CommandResultStatus status)
+    CommandResult makeCompletedResult(const PendingCommand &command)
     {
-        if (!currentCommand.has_command)
-        {
-            return;
-        }
-
         CommandResult result;
-        result.command_id = currentCommand.id;
-        result.status = status;
+        result.command_id = command.id;
+        result.status = CommandResultStatus::Completed;
+        return result;
+    }
+
+    CommandResult makeFailedResult(const PendingCommand &command)
+    {
+        CommandResult result;
+        result.command_id = command.id;
+        result.status = CommandResultStatus::Failed;
+        return result;
+    }
+
+    bool sendCommandResult(const PendingCommand &command, CommandResultStatus status)
+    {
+        CommandResult result = status == CommandResultStatus::Completed
+                                   ? makeCompletedResult(command)
+                                   : makeFailedResult(command);
 
         bool sent = BackendClient::sendCommandResult(result);
 
-        if (sent)
+        if (!sent)
         {
-            Serial.println("[COMMAND_MANAGER] Command result sent");
-            currentCommand = PendingCommand{};
-            commandRunning = false;
+            Log::warn("COMMAND_MANAGER", "Command result delivery failed");
         }
-        else
-        {
-            Serial.println("[COMMAND_MANAGER] Command result send failed");
-        }
+
+        return sent;
     }
 }
 
 namespace CommandManager
 {
-
     void begin()
     {
-        Serial.println("[COMMAND_MANAGER] Initialized");
+        routerCommandInProgress = false;
+        pendingRouterCommand = PendingCommand();
+
+        Log::info("COMMAND_MANAGER", "Initialized");
     }
 
     void handleCommand(const PendingCommand &command)
     {
-        if (commandRunning)
+        if (!command.has_command)
         {
-            Serial.println("[COMMAND_MANAGER] Command ignored, another command is running");
             return;
         }
 
-        currentCommand = command;
-        commandRunning = true;
-
-        CommandExecutionState state =
-            CommandHandler::execute(command);
-
-        switch (state)
+        switch (command.type)
         {
-        case CommandExecutionState::Completed:
-            sendResult(CommandResultStatus::Completed);
-            break;
+        case CommandType::RebootRouter:
+            if (routerCommandInProgress)
+            {
+                Log::warn("COMMAND_MANAGER", "Router command rejected, already in progress");
+                sendCommandResult(command, CommandResultStatus::Failed);
+                return;
+            }
 
-        case CommandExecutionState::Failed:
-            sendResult(CommandResultStatus::Failed);
-            break;
+            Log::info("COMMAND_MANAGER", "Reboot router command accepted");
 
-        case CommandExecutionState::Running:
-            Serial.println("[COMMAND_MANAGER] Command is running");
-            break;
+            pendingRouterCommand = command;
+            routerCommandInProgress = true;
+
+            if (!RouterWatchdog::requestRouterReboot())
+            {
+                Log::warn("COMMAND_MANAGER", "Router reboot command failed to start");
+                routerCommandInProgress = false;
+                sendCommandResult(command, CommandResultStatus::Failed);
+            }
+
+            return;
+
+        case CommandType::RebootDevice:
+            Log::info("COMMAND_MANAGER", "Reboot device command received");
+            sendCommandResult(command, CommandResultStatus::Completed);
+            delay(500);
+            ESP.restart();
+            return;
+
+        case CommandType::None:
+        default:
+            Log::warn("COMMAND_MANAGER", "Unknown command received");
+            sendCommandResult(command, CommandResultStatus::Failed);
+            return;
         }
     }
 
@@ -82,28 +107,15 @@ namespace CommandManager
 
     void notifyRouterRecoveryFinished()
     {
-        Serial.println("[COMMAND_MANAGER] notifyRouterRecoveryFinished called");
-
-        if (!commandRunning)
+        if (!routerCommandInProgress)
         {
-            Serial.println("[COMMAND_MANAGER] No command running");
             return;
         }
 
-        Serial.print("[COMMAND_MANAGER] Current command id=");
-        Serial.println(currentCommand.id);
+        Log::info("COMMAND_MANAGER", "Router command completed");
 
-        Serial.print("[COMMAND_MANAGER] Current command type=");
-        Serial.println(static_cast<int>(currentCommand.type));
-
-        if (currentCommand.type != CommandType::RebootRouter)
-        {
-            Serial.println("[COMMAND_MANAGER] Current command is not RebootRouter");
-            return;
-        }
-
-        Serial.println("[COMMAND_MANAGER] Router recovery finished");
-        sendResult(CommandResultStatus::Completed);
+        routerCommandInProgress = false;
+        sendCommandResult(pendingRouterCommand, CommandResultStatus::Completed);
+        pendingRouterCommand = PendingCommand();
     }
-
 }

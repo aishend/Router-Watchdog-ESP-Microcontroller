@@ -32,12 +32,17 @@
 #define ROUTER_WATCHDOG_DEVICE_ID "router-watchdog-001"
 #endif
 
+#ifndef ROUTER_WATCHDOG_ARP_SCAN_ENABLED
+#define ROUTER_WATCHDOG_ARP_SCAN_ENABLED false
+#endif
+
 namespace AppConfig
 {
 
     constexpr const char *FIRMWARE_VERSION = "0.1.0";
 
     constexpr unsigned long SERIAL_BAUD = 74880; // Serial monitor baud rate.
+    constexpr bool DEBUG_LOGS_ENABLED = false;   // Enables verbose logs such as payloads and scan details.
 
     constexpr const char *WIFI_SSID = ROUTER_WATCHDOG_WIFI_SSID;         // Wi-Fi network name.
     constexpr const char *WIFI_PASSWORD = ROUTER_WATCHDOG_WIFI_PASSWORD; // Wi-Fi password.
@@ -51,6 +56,9 @@ namespace AppConfig
     constexpr bool BACKEND_SECURE = ROUTER_WATCHDOG_BACKEND_SECURE;             // true for HTTPS; false for local HTTP.
     constexpr bool BACKEND_INSECURE_TLS = ROUTER_WATCHDOG_BACKEND_INSECURE_TLS; // true skips TLS certificate validation when BACKEND_SECURE is true.
     constexpr uint16_t BACKEND_TIMEOUT_MS = 10000;                              // Max time to wait for the backend response.
+    constexpr bool ARP_SCAN_ENABLED = ROUTER_WATCHDOG_ARP_SCAN_ENABLED;         // Enables LAN client discovery through ARP.
+    constexpr unsigned long NETWORK_SCAN_INTERVAL_MS = 300000;                  // Time between LAN client discovery scans.
+    constexpr uint16_t NETWORK_SCAN_MAX_HOSTS = 254;                            // Max subnet hosts scanned per discovery pass.
 
     constexpr uint8_t MAX_CONSECUTIVE_FAILURES = 3;               // Failures required before restarting the router.
     constexpr unsigned long STARTUP_GRACE_PERIOD_MS = 15000;      // Initial wait before monitoring starts.

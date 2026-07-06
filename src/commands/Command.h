@@ -1,5 +1,6 @@
 #ifndef COMMAND_H
 #define COMMAND_H
+
 #include <Arduino.h>
 
 enum class CommandType
