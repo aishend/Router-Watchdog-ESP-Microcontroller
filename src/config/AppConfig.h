@@ -38,36 +38,35 @@
 
 namespace AppConfig
 {
-
     constexpr const char *FIRMWARE_VERSION = "0.1.0";
 
-    constexpr unsigned long SERIAL_BAUD = 74880; // Serial monitor baud rate.
-    constexpr bool DEBUG_LOGS_ENABLED = false;   // Enables verbose logs such as payloads and scan details.
+    constexpr unsigned long SERIAL_BAUD = 74880;
+    constexpr bool DEBUG_LOGS_ENABLED = false;
 
-    constexpr const char *WIFI_SSID = ROUTER_WATCHDOG_WIFI_SSID;         // Wi-Fi network name.
-    constexpr const char *WIFI_PASSWORD = ROUTER_WATCHDOG_WIFI_PASSWORD; // Wi-Fi password.
+    constexpr const char *WIFI_SSID = ROUTER_WATCHDOG_WIFI_SSID;
+    constexpr const char *WIFI_PASSWORD = ROUTER_WATCHDOG_WIFI_PASSWORD;
 
-    constexpr const char *INTERNET_TEST_HOST = "1.1.1.1"; // Host used to test internet access.
-    constexpr uint16_t INTERNET_TEST_PORT = 80;           // TCP port used for the internet test.
-    constexpr uint16_t INTERNET_TEST_TIMEOUT_MS = 2000;   // Max time to wait for the internet test.
+    constexpr const char *INTERNET_TEST_HOST = "1.1.1.1";
+    constexpr uint16_t INTERNET_TEST_PORT = 80;
+    constexpr uint16_t INTERNET_TEST_TIMEOUT_MS = 2000;
 
-    constexpr const char *BACKEND_URL = ROUTER_WATCHDOG_BACKEND_URL;            // Endpoint that receives heartbeats.
-    constexpr const char *DEVICE_ID = ROUTER_WATCHDOG_DEVICE_ID;                // Device identifier sent in each heartbeat.
-    constexpr bool BACKEND_SECURE = ROUTER_WATCHDOG_BACKEND_SECURE;             // true for HTTPS; false for local HTTP.
-    constexpr bool BACKEND_INSECURE_TLS = ROUTER_WATCHDOG_BACKEND_INSECURE_TLS; // true skips TLS certificate validation when BACKEND_SECURE is true.
-    constexpr uint16_t BACKEND_TIMEOUT_MS = 10000;                              // Max time to wait for the backend response.
-    constexpr bool ARP_SCAN_ENABLED = ROUTER_WATCHDOG_ARP_SCAN_ENABLED;         // Enables LAN client discovery through ARP.
-    constexpr unsigned long NETWORK_SCAN_INTERVAL_MS = 300000;                  // Time between LAN client discovery scans.
-    constexpr uint16_t NETWORK_SCAN_MAX_HOSTS = 254;                            // Max subnet hosts scanned per discovery pass.
+    constexpr const char *BACKEND_URL = ROUTER_WATCHDOG_BACKEND_URL;
+    constexpr const char *DEVICE_ID = ROUTER_WATCHDOG_DEVICE_ID;
+    constexpr bool BACKEND_SECURE = ROUTER_WATCHDOG_BACKEND_SECURE;
+    constexpr bool BACKEND_INSECURE_TLS = ROUTER_WATCHDOG_BACKEND_INSECURE_TLS;
+    constexpr uint16_t BACKEND_TIMEOUT_MS = 10000;
+    constexpr bool ARP_SCAN_ENABLED = ROUTER_WATCHDOG_ARP_SCAN_ENABLED;
+    constexpr unsigned long NETWORK_SCAN_INTERVAL_MS = 300000;
+    constexpr uint16_t NETWORK_SCAN_MAX_HOSTS = 254;
 
-    constexpr uint8_t MAX_CONSECUTIVE_FAILURES = 3;               // Failures required before restarting the router.
-    constexpr unsigned long STARTUP_GRACE_PERIOD_MS = 15000;      // Initial wait before monitoring starts.
-    constexpr unsigned long CHECK_INTERVAL_MS = 10000;            // Time between connectivity checks.
-    constexpr unsigned long ROUTER_POWER_OFF_TIME_MS = 10000;     // Time to keep router power off.
-    constexpr unsigned long ROUTER_RECOVERY_WAIT_TIME_MS = 10000; // Wait after power is restored.
+    constexpr uint8_t MAX_CONSECUTIVE_FAILURES = 3;
+    constexpr unsigned long STARTUP_GRACE_PERIOD_MS = 15000;
+    constexpr unsigned long CHECK_INTERVAL_MS = 10000;
+    constexpr unsigned long ROUTER_POWER_OFF_TIME_MS = 10000;
+    constexpr unsigned long ROUTER_RECOVERY_WAIT_TIME_MS = 10000;
 
-    constexpr uint8_t RELAY_GPIO = 4;        // GPIO connected to the relay module (NodeMCU D2).
-    constexpr bool RELAY_ACTIVE_LOW = false; // Set true if the relay turns on with LOW.
+    constexpr uint8_t RELAY_GPIO = 4;
+    constexpr bool RELAY_ACTIVE_LOW = false;
 
     inline bool hasPlaceholderSecrets()
     {
@@ -75,7 +74,6 @@ namespace AppConfig
                strcmp(WIFI_PASSWORD, "your-wifi-password") == 0 ||
                strcmp(BACKEND_URL, "https://your-api-endpoint") == 0;
     }
-
 }
 
 #endif

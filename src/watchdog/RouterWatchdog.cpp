@@ -3,11 +3,11 @@
 #include <Arduino.h>
 
 #include "../backend/BackendClient.h"
+#include "../commands/CommandManager.h"
 #include "../config/AppConfig.h"
 #include "../drivers/Relay.h"
 #include "../logging/Logger.h"
 #include "../network/NetworkManager.h"
-#include "../commands/CommandManager.h"
 
 namespace
 {

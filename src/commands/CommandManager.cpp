@@ -12,27 +12,17 @@ namespace
     PendingCommand pendingRouterCommand;
     bool routerCommandInProgress = false;
 
-    CommandResult makeCompletedResult(const PendingCommand &command)
+    CommandResult makeCommandResult(const PendingCommand &command, CommandResultStatus status)
     {
         CommandResult result;
         result.command_id = command.id;
-        result.status = CommandResultStatus::Completed;
-        return result;
-    }
-
-    CommandResult makeFailedResult(const PendingCommand &command)
-    {
-        CommandResult result;
-        result.command_id = command.id;
-        result.status = CommandResultStatus::Failed;
+        result.status = status;
         return result;
     }
 
     bool sendCommandResult(const PendingCommand &command, CommandResultStatus status)
     {
-        CommandResult result = status == CommandResultStatus::Completed
-                                   ? makeCompletedResult(command)
-                                   : makeFailedResult(command);
+        CommandResult result = makeCommandResult(command, status);
 
         bool sent = BackendClient::sendCommandResult(result);
 

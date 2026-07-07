@@ -1,17 +1,16 @@
 #include <Arduino.h>
 
 #include "backend/BackendClient.h"
+#include "commands/CommandManager.h"
 #include "config/AppConfig.h"
 #include "drivers/Relay.h"
 #include "logging/Logger.h"
 #include "network/NetworkManager.h"
 #include "network/NetworkScanner.h"
 #include "watchdog/RouterWatchdog.h"
-#include "commands/CommandManager.h"
 
 namespace
 {
-
     NetworkScanner networkScanner;
     unsigned long lastNetworkScanAt = 0;
 
@@ -50,7 +49,6 @@ namespace
 
         BackendClient::sendNetworkClientsReport(clients, clientCount);
     }
-
 }
 
 void setup()

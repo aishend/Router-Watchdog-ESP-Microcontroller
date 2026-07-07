@@ -1,14 +1,14 @@
 #include "BackendClient.h"
 
+#include <ArduinoJson.h>
 #include <Arduino.h>
 #include <ESP8266HTTPClient.h>
+#include <ESP8266WiFi.h>
 #include <WiFiClient.h>
 #include <WiFiClientSecureBearSSL.h>
-#include <ESP8266WiFi.h>
-#include <ArduinoJson.h>
 
-#include "../config/AppConfig.h"
 #include "../commands/Command.h"
+#include "../config/AppConfig.h"
 #include "../logging/Logger.h"
 
 namespace
@@ -112,20 +112,20 @@ namespace
             return response;
         }
 
-        const char *command_id = command["id"] | "";
-        const char *command_type = command["type"] | "NONE";
+        const char *commandId = command["id"] | "";
+        const char *commandType = command["type"] | "NONE";
 
-        if (command_id[0] == '\0')
+        if (commandId[0] == '\0')
         {
             Log::warn("BACKEND", "Command ignored, missing id");
             return response;
         }
 
         response.command.has_command = true;
-        response.command.id = command_id;
-        response.command.type = parseCommand(String(command_type));
+        response.command.id = commandId;
+        response.command.type = parseCommand(String(commandType));
 
-        Log::infof("BACKEND", "Command received id=%s type=%s", response.command.id.c_str(), command_type);
+        Log::infof("BACKEND", "Command received id=%s type=%s", response.command.id.c_str(), commandType);
 
         return response;
     }
