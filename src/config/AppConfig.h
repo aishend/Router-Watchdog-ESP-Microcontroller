@@ -95,7 +95,7 @@ namespace AppConfig
     constexpr unsigned long COMMAND_STARTED_TO_RELAY_DELAY_MS = 750;
 
     constexpr uint8_t RELAY_GPIO = 4;
-    constexpr bool RELAY_ACTIVE_LOW = false;
+    constexpr bool RELAY_ACTIVE_LOW = true;
 
     inline bool hasPlaceholderSecrets()
     {
