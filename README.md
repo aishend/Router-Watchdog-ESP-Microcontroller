@@ -72,6 +72,7 @@ Example `AppSecrets.h`:
 #define ROUTER_WATCHDOG_MQTT_USER "your-mqtt-user"
 #define ROUTER_WATCHDOG_MQTT_PASSWORD "your-mqtt-password"
 #define ROUTER_WATCHDOG_MQTT_TOPIC_PREFIX "router-watchdog"
+#define ROUTER_WATCHDOG_USE_PRODUCTION_TIMINGS false
 ```
 
 `src/config/AppSecrets.h` is ignored by Git and must not be committed.
@@ -84,11 +85,13 @@ Example `AppSecrets.h`:
 | `INTERNET_TEST_HOSTS` | `1.1.1.1`, `8.8.8.8`, `9.9.9.9` | Connectivity targets. Internet is OK when any target responds. |
 | `INTERNET_TEST_PORT` | `80` | TCP port used for connectivity checks. |
 | `INTERNET_TEST_TIMEOUT_MS` | `2000` | Per-target connection timeout. |
-| `STARTUP_GRACE_PERIOD_MS` | `15000` | Initial wait before monitoring starts. |
-| `CHECK_INTERVAL_MS` | `10000` | Time between connectivity checks. |
-| `MAX_CONSECUTIVE_FAILURES` | `3` | Failures required before router reboot. |
-| `ROUTER_POWER_OFF_TIME_MS` | `10000` | Time to keep router power off. |
-| `ROUTER_RECOVERY_WAIT_TIME_MS` | `10000` | Wait after router power is restored. |
+| `USE_PRODUCTION_TIMINGS` | `false` | Selects production timings when `true`; test timings when `false`. Set with `ROUTER_WATCHDOG_USE_PRODUCTION_TIMINGS`. |
+| `COMMAND_STARTED_TO_RELAY_DELAY_MS` | `750` | Delay between publishing command `STARTED` and cutting router power. |
+| `STARTUP_GRACE_PERIOD_MS` | timing profile | Initial wait before monitoring starts. |
+| `CHECK_INTERVAL_MS` | timing profile | Time between connectivity checks. |
+| `MAX_CONSECUTIVE_FAILURES` | timing profile | Failures required before router reboot. |
+| `ROUTER_POWER_OFF_TIME_MS` | timing profile | Time to keep router power off. |
+| `ROUTER_RECOVERY_WAIT_TIME_MS` | timing profile | Wait after router power is restored. |
 | `MQTT_HOST` | from secrets | MQTT broker host or IP address. |
 | `MQTT_PORT` | `1883` | MQTT broker port. |
 | `MQTT_USER` | from secrets | MQTT username. |
@@ -96,6 +99,16 @@ Example `AppSecrets.h`:
 | `MQTT_TOPIC_PREFIX` | `router-watchdog` | Prefix for all firmware topics. |
 | `MQTT_BUFFER_SIZE` | `512` | MQTT packet buffer size. |
 | `MQTT_RECONNECT_INTERVAL_MS` | `5000` | Time between MQTT reconnect attempts. |
+
+Timing profiles:
+
+| Setting | Test | Production |
+| --- | ---: | ---: |
+| `STARTUP_GRACE_PERIOD_MS` | `15000` | `60000` |
+| `CHECK_INTERVAL_MS` | `10000` | `30000` |
+| `MAX_CONSECUTIVE_FAILURES` | `3` | `5` |
+| `ROUTER_POWER_OFF_TIME_MS` | `10000` | `15000` |
+| `ROUTER_RECOVERY_WAIT_TIME_MS` | `10000` | `180000` |
 
 Read [docs/mqtt.md](docs/mqtt.md) for the topic contract, payloads, and command format.
 
@@ -107,6 +120,8 @@ Heartbeat payload:
   "sequence": 1234,
   "ip": "192.168.1.100",
   "gateway": "192.168.1.1",
+  "wifiConnected": true,
+  "internetConnected": true,
   "failures": 0,
   "uptime": 123,
   "rssi": -58,
@@ -119,7 +134,7 @@ Supported MQTT commands:
 
 | Command | Behavior |
 | --- | --- |
-| `REBOOT_ROUTER` | Publishes `STARTED`, then starts the relay recovery flow. |
+| `REBOOT_ROUTER` | Publishes `STARTED`, waits `COMMAND_STARTED_TO_RELAY_DELAY_MS`, then starts the relay recovery flow. |
 | `REBOOT_DEVICE` | Publishes `STARTED`, waits briefly, then restarts the ESP8266. |
 
 Heartbeats are skipped while MQTT is disconnected.
@@ -192,6 +207,11 @@ When connectivity fails `MAX_CONSECUTIVE_FAILURES` times in a row, the watchdog:
 6. Clears failure state and allows future router reboot commands.
 
 The recovery flow is state-based and avoids long blocking delays in the main loop.
+
+## Future Improvements
+
+- Persist recent command IDs in LittleFS or EEPROM so duplicate command protection survives device restarts.
+- Tune production timing values after real router measurements.
 
 ## Release Checklist
 

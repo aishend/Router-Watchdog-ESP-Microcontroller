@@ -12,5 +12,6 @@
 #define ROUTER_WATCHDOG_MQTT_USER "your-mqtt-user"
 #define ROUTER_WATCHDOG_MQTT_PASSWORD "your-mqtt-password"
 #define ROUTER_WATCHDOG_MQTT_TOPIC_PREFIX "router-watchdog"
+#define ROUTER_WATCHDOG_USE_PRODUCTION_TIMINGS false
 
 #endif

@@ -56,10 +56,10 @@ Published when a command starts or is rejected.
 
 | Status | Meaning |
 | --- | --- |
-| `STARTED` | The ESP accepted the command and is about to execute it. For `REBOOT_ROUTER`, this is published before relay activation. |
+| `STARTED` | The ESP accepted the command and is about to execute it. For `REBOOT_ROUTER`, this is published shortly before relay activation. |
 | `REJECTED` | The ESP rejected the command. Examples: duplicate `id`, unknown `type`, another command queued, or router recovery already running. |
 
-For `REBOOT_ROUTER`, the ESP does not publish `COMPLETED`. Backends should treat `STARTED` as the transition to `REBOOT_IN_PROGRESS`, then use heartbeat/availability recovery and their own timeout to decide when the router recovered or failed.
+For `REBOOT_ROUTER`, the ESP publishes `STARTED`, waits `COMMAND_STARTED_TO_RELAY_DELAY_MS`, then activates the relay. It does not publish `COMPLETED`. Backends should treat `STARTED` as the transition to `REBOOT_IN_PROGRESS`, then use heartbeat/availability recovery and their own timeout to decide when the router recovered or failed.
 
 ### availability
 
@@ -96,7 +96,7 @@ Supported command types:
 
 | Type | Behavior |
 | --- | --- |
-| `REBOOT_ROUTER` | Publishes `STARTED`, then starts the relay recovery flow. |
+| `REBOOT_ROUTER` | Publishes `STARTED`, waits `COMMAND_STARTED_TO_RELAY_DELAY_MS`, then starts the relay recovery flow. |
 | `REBOOT_DEVICE` | Publishes `STARTED`, waits briefly, then restarts the ESP8266. |
 
 Command rules:

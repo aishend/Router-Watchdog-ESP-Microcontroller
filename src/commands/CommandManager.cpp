@@ -2,6 +2,7 @@
 
 #include <Arduino.h>
 
+#include "../config/AppConfig.h"
 #include "../mqtt/MqttClient.h"
 #include "../watchdog/RouterWatchdog.h"
 #include "CommandResult.h"
@@ -12,9 +13,12 @@ namespace
     constexpr unsigned long DEVICE_REBOOT_DELAY_MS = 500;
 
     PendingCommand queuedCommand;
+    PendingCommand routerStartCommand;
     bool hasQueuedCommand = false;
+    bool routerStartPending = false;
     bool routerCommandInProgress = false;
     bool deviceRebootPending = false;
+    unsigned long routerStartAtMs = 0;
     unsigned long deviceRebootAtMs = 0;
     String commandHistory[COMMAND_HISTORY_SIZE];
     uint8_t nextCommandHistoryIndex = 0;
@@ -62,7 +66,7 @@ namespace
 
     bool canQueueCommand()
     {
-        return !hasQueuedCommand && !deviceRebootPending;
+        return !hasQueuedCommand && !routerStartPending && !deviceRebootPending;
     }
 
     void rejectCommand(const PendingCommand &command, const char *reason)
@@ -87,17 +91,27 @@ namespace
             return;
         }
 
-        routerCommandInProgress = true;
-        PendingCommand command = queuedCommand;
+        routerStartCommand = queuedCommand;
+        routerStartPending = true;
+        routerStartAtMs = millis() + AppConfig::COMMAND_STARTED_TO_RELAY_DELAY_MS;
         queuedCommand = PendingCommand();
         hasQueuedCommand = false;
+        Serial.printf("[COMMAND_MANAGER] Router relay action scheduled in %lu ms\n", AppConfig::COMMAND_STARTED_TO_RELAY_DELAY_MS);
+    }
 
+    void startPendingRouterReboot()
+    {
         if (!RouterWatchdog::requestRouterReboot())
         {
             Serial.println("[COMMAND_MANAGER] WARN Router reboot command failed to start");
-            routerCommandInProgress = false;
-            rejectCommand(command, "router_reboot_start_failed");
+            routerStartCommand = PendingCommand();
+            routerStartPending = false;
+            return;
         }
+
+        routerCommandInProgress = true;
+        routerStartCommand = PendingCommand();
+        routerStartPending = false;
     }
 
     void executeDeviceReboot(unsigned long now)
@@ -125,7 +139,9 @@ namespace CommandManager
     void begin()
     {
         queuedCommand = PendingCommand();
+        routerStartCommand = PendingCommand();
         hasQueuedCommand = false;
+        routerStartPending = false;
         routerCommandInProgress = false;
         deviceRebootPending = false;
         nextCommandHistoryIndex = 0;
@@ -181,6 +197,11 @@ namespace CommandManager
         if (deviceRebootPending && hasElapsed(now, deviceRebootAtMs))
         {
             ESP.restart();
+        }
+
+        if (routerStartPending && hasElapsed(now, routerStartAtMs))
+        {
+            startPendingRouterReboot();
         }
 
         if (!hasQueuedCommand)
