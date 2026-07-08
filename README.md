@@ -5,7 +5,7 @@ Firmware for a NodeMCU/ESP8266 that monitors Wi-Fi and internet connectivity, re
 ## What It Does
 
 - Connects to a configured Wi-Fi network.
-- Checks internet access with a TCP connection to `1.1.1.1:80`.
+- Checks internet access with TCP connections to multiple configured targets.
 - Sends heartbeat payloads to a configurable MQTT broker.
 - Accepts remote commands from MQTT.
 - Reboots the router by controlling a relay.
@@ -29,10 +29,10 @@ Use `false` for relay modules that turn on with `HIGH`. Use `true` for relay mod
 
 ```text
 src/
-  commands/      Command orchestration
+  commands/      Command orchestration and command result types
   config/        Build-time configuration and local secrets example
   drivers/       Relay driver
-  mqtt/          MQTT transport, topics, and payloads
+  mqtt/          MQTT transport, topics, command parsing, and payload builders
   network/       Wi-Fi status and internet checks
   watchdog/      Failure tracking and router recovery state machine
   main.cpp       Boot sequence and main loop
@@ -69,8 +69,8 @@ Example `AppSecrets.h`:
 #define ROUTER_WATCHDOG_DEVICE_ID "router-watchdog-001"
 #define ROUTER_WATCHDOG_MQTT_HOST "192.168.1.10"
 #define ROUTER_WATCHDOG_MQTT_PORT 1883
-#define ROUTER_WATCHDOG_MQTT_USER ""
-#define ROUTER_WATCHDOG_MQTT_PASSWORD ""
+#define ROUTER_WATCHDOG_MQTT_USER "your-mqtt-user"
+#define ROUTER_WATCHDOG_MQTT_PASSWORD "your-mqtt-password"
 #define ROUTER_WATCHDOG_MQTT_TOPIC_PREFIX "router-watchdog"
 ```
 
@@ -81,6 +81,9 @@ Example `AppSecrets.h`:
 | Setting | Default | Purpose |
 | --- | --- | --- |
 | `SERIAL_BAUD` | `74880` | Serial monitor speed. |
+| `INTERNET_TEST_HOSTS` | `1.1.1.1`, `8.8.8.8`, `9.9.9.9` | Connectivity targets. Internet is OK when any target responds. |
+| `INTERNET_TEST_PORT` | `80` | TCP port used for connectivity checks. |
+| `INTERNET_TEST_TIMEOUT_MS` | `2000` | Per-target connection timeout. |
 | `STARTUP_GRACE_PERIOD_MS` | `15000` | Initial wait before monitoring starts. |
 | `CHECK_INTERVAL_MS` | `10000` | Time between connectivity checks. |
 | `MAX_CONSECUTIVE_FAILURES` | `3` | Failures required before router reboot. |
@@ -88,6 +91,8 @@ Example `AppSecrets.h`:
 | `ROUTER_RECOVERY_WAIT_TIME_MS` | `10000` | Wait after router power is restored. |
 | `MQTT_HOST` | from secrets | MQTT broker host or IP address. |
 | `MQTT_PORT` | `1883` | MQTT broker port. |
+| `MQTT_USER` | from secrets | MQTT username. |
+| `MQTT_PASSWORD` | from secrets | MQTT password. |
 | `MQTT_TOPIC_PREFIX` | `router-watchdog` | Prefix for all firmware topics. |
 | `MQTT_BUFFER_SIZE` | `512` | MQTT packet buffer size. |
 | `MQTT_RECONNECT_INTERVAL_MS` | `5000` | Time between MQTT reconnect attempts. |
@@ -99,6 +104,7 @@ Heartbeat payload:
 ```json
 {
   "deviceId": "router-watchdog-001",
+  "sequence": 1234,
   "ip": "192.168.1.100",
   "gateway": "192.168.1.1",
   "failures": 0,

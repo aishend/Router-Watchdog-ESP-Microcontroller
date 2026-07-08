@@ -72,20 +72,23 @@ namespace CommandManager
                 routerCommandInProgress = false;
                 sendCommandResult(command, CommandResultStatus::Failed);
             }
+            else
+            {
+                sendCommandResult(command, CommandResultStatus::Started);
+            }
 
             return;
 
         case CommandType::RebootDevice:
             Serial.println("[COMMAND_MANAGER] Reboot device command received");
-            sendCommandResult(command, CommandResultStatus::Completed);
+            sendCommandResult(command, CommandResultStatus::Started);
             delay(500);
             ESP.restart();
             return;
 
         case CommandType::None:
         default:
-            Serial.println("[COMMAND_MANAGER] WARN Unknown command received");
-            sendCommandResult(command, CommandResultStatus::Failed);
+            Serial.println("[COMMAND_MANAGER] WARN Unknown command ignored");
             return;
         }
     }

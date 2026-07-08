@@ -25,11 +25,11 @@
 #endif
 
 #ifndef ROUTER_WATCHDOG_MQTT_USER
-#define ROUTER_WATCHDOG_MQTT_USER ""
+#define ROUTER_WATCHDOG_MQTT_USER "your-mqtt-user"
 #endif
 
 #ifndef ROUTER_WATCHDOG_MQTT_PASSWORD
-#define ROUTER_WATCHDOG_MQTT_PASSWORD ""
+#define ROUTER_WATCHDOG_MQTT_PASSWORD "your-mqtt-password"
 #endif
 
 #ifndef ROUTER_WATCHDOG_MQTT_TOPIC_PREFIX
@@ -49,7 +49,12 @@ namespace AppConfig
     constexpr const char *WIFI_SSID = ROUTER_WATCHDOG_WIFI_SSID;
     constexpr const char *WIFI_PASSWORD = ROUTER_WATCHDOG_WIFI_PASSWORD;
 
-    constexpr const char *INTERNET_TEST_HOST = "1.1.1.1";
+    constexpr const char *INTERNET_TEST_HOSTS[] = {
+        "1.1.1.1",
+        "8.8.8.8",
+        "9.9.9.9",
+    };
+    constexpr size_t INTERNET_TEST_HOST_COUNT = sizeof(INTERNET_TEST_HOSTS) / sizeof(INTERNET_TEST_HOSTS[0]);
     constexpr uint16_t INTERNET_TEST_PORT = 80;
     constexpr uint16_t INTERNET_TEST_TIMEOUT_MS = 2000;
 
@@ -76,7 +81,9 @@ namespace AppConfig
     {
         return strcmp(WIFI_SSID, "your-wifi-name") == 0 ||
                strcmp(WIFI_PASSWORD, "your-wifi-password") == 0 ||
-               strcmp(MQTT_HOST, "192.168.1.10") == 0;
+               strcmp(MQTT_HOST, "192.168.1.10") == 0 ||
+               strcmp(MQTT_USER, "your-mqtt-user") == 0 ||
+               strcmp(MQTT_PASSWORD, "your-mqtt-password") == 0;
     }
 }
 

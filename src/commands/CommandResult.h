@@ -5,6 +5,7 @@
 
 enum class CommandResultStatus
 {
+    Started,
     Completed,
     Failed
 };

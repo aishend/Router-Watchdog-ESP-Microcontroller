@@ -10,15 +10,25 @@ namespace
 
     bool canConnectToInternet()
     {
-        WiFiClient client;
-        client.setTimeout(AppConfig::INTERNET_TEST_TIMEOUT_MS);
+        for (size_t i = 0; i < AppConfig::INTERNET_TEST_HOST_COUNT; i++)
+        {
+            const char *host = AppConfig::INTERNET_TEST_HOSTS[i];
+            WiFiClient client;
+            client.setTimeout(AppConfig::INTERNET_TEST_TIMEOUT_MS);
 
-        bool connected = client.connect(
-            AppConfig::INTERNET_TEST_HOST,
-            AppConfig::INTERNET_TEST_PORT);
+            bool connected = client.connect(host, AppConfig::INTERNET_TEST_PORT);
+            client.stop();
 
-        client.stop();
-        return connected;
+            if (connected)
+            {
+                Serial.printf("[NETWORK] Internet test OK via %s:%u\n", host, AppConfig::INTERNET_TEST_PORT);
+                return true;
+            }
+
+            Serial.printf("[NETWORK] Internet test failed via %s:%u\n", host, AppConfig::INTERNET_TEST_PORT);
+        }
+
+        return false;
     }
 
 }

@@ -9,8 +9,8 @@
 #define ROUTER_WATCHDOG_DEVICE_ID "router-watchdog-001"
 #define ROUTER_WATCHDOG_MQTT_HOST "192.168.1.10"
 #define ROUTER_WATCHDOG_MQTT_PORT 1883
-#define ROUTER_WATCHDOG_MQTT_USER ""
-#define ROUTER_WATCHDOG_MQTT_PASSWORD ""
+#define ROUTER_WATCHDOG_MQTT_USER "your-mqtt-user"
+#define ROUTER_WATCHDOG_MQTT_PASSWORD "your-mqtt-password"
 #define ROUTER_WATCHDOG_MQTT_TOPIC_PREFIX "router-watchdog"
 
 #endif
