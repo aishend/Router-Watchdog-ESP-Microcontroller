@@ -82,6 +82,12 @@ namespace
 
             if (consecutive_failures >= AppConfig::MAX_CONSECUTIVE_FAILURES)
             {
+                if (CommandManager::hasRouterRebootPendingOrInProgress())
+                {
+                    Serial.println("[WATCHDOG] Auto recovery skipped, router reboot command pending");
+                    return;
+                }
+
                 requestRouterReboot();
             }
         }

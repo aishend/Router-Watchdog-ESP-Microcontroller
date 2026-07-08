@@ -228,6 +228,13 @@ namespace CommandManager
         }
     }
 
+    bool hasRouterRebootPendingOrInProgress()
+    {
+        return routerStartPending ||
+               routerCommandInProgress ||
+               (hasQueuedCommand && queuedCommand.type == CommandType::RebootRouter);
+    }
+
     void notifyRouterRecoveryFinished()
     {
         routerCommandInProgress = false;
