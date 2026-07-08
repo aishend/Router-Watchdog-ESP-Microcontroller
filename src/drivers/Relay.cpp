@@ -3,7 +3,6 @@
 #include <Arduino.h>
 
 #include "../config/AppConfig.h"
-#include "../logging/Logger.h"
 
 namespace
 {
@@ -21,12 +20,12 @@ namespace Relay
 
     void begin()
     {
-        Log::info("RELAY", "Initializing");
+        Serial.println("[RELAY] Initializing");
 
         pinMode(AppConfig::RELAY_GPIO, OUTPUT);
         writeRelay(false);
 
-        Log::info("RELAY", "OFF");
+        Serial.println("[RELAY] OFF");
     }
 
     void turnOn()

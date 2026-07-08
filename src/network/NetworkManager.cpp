@@ -4,7 +4,6 @@
 #include <WiFiClient.h>
 
 #include "../config/AppConfig.h"
-#include "../logging/Logger.h"
 
 namespace
 {
@@ -29,14 +28,14 @@ namespace NetworkManager
 
     void begin()
     {
-        Log::info("NETWORK", "Initialization started");
+        Serial.println("[NETWORK] Initialization started");
 
         WiFi.persistent(false);
         WiFi.mode(WIFI_STA);
         WiFi.setAutoReconnect(true);
         WiFi.begin(AppConfig::WIFI_SSID, AppConfig::WIFI_PASSWORD);
 
-        Log::info("NETWORK", "Wi-Fi connection requested");
+        Serial.println("[NETWORK] Wi-Fi connection requested");
     }
 
     NetworkStatus checkStatus()

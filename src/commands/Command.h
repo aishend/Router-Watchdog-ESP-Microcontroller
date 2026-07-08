@@ -17,10 +17,4 @@ struct PendingCommand
     CommandType type = CommandType::None;
 };
 
-struct HeartbeatResponse
-{
-    bool accepted = false;
-    PendingCommand command;
-};
-
 #endif

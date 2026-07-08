@@ -2,11 +2,10 @@
 
 #include <Arduino.h>
 
-#include "../backend/BackendClient.h"
 #include "../commands/CommandManager.h"
 #include "../config/AppConfig.h"
 #include "../drivers/Relay.h"
-#include "../logging/Logger.h"
+#include "../mqtt/MqttClient.h"
 #include "../network/NetworkManager.h"
 
 namespace
@@ -46,9 +45,8 @@ namespace
     {
         if (status.wifi_connected)
         {
-            Log::infof(
-                "NETWORK",
-                "Wi-Fi connected | IP=%s | Gateway=%s | Internet=%s | Failures=%u",
+            Serial.printf(
+                "[NETWORK] Wi-Fi connected | IP=%s | Gateway=%s | Internet=%s | Failures=%u\n",
                 status.ip_address.toString().c_str(),
                 status.gateway_address.toString().c_str(),
                 status.internet_connected ? "OK" : "DOWN",
@@ -56,15 +54,15 @@ namespace
         }
         else
         {
-            Log::infof("NETWORK", "Wi-Fi not connected | Failures=%u", state.consecutive_failures);
+            Serial.printf("[NETWORK] Wi-Fi not connected | Failures=%u\n", state.consecutive_failures);
         }
     }
 
     void startRecovery(unsigned long now)
     {
-        Log::warn("WATCHDOG", "Recovery triggered");
+        Serial.println("[WATCHDOG] WARN Recovery triggered");
 
-        Log::info("RECOVERY", "relay ON, router power removed");
+        Serial.println("[RECOVERY] relay ON, router power removed");
         Relay::turnOn();
 
         state.recovery_state = RecoveryState::PowerOff;
@@ -81,10 +79,10 @@ namespace
 
         if (state.recovery_state == RecoveryState::PowerOff)
         {
-            Log::info("RECOVERY", "relay OFF, router power restored");
+            Serial.println("[RECOVERY] relay OFF, router power restored");
             Relay::turnOff();
 
-            Log::infof("RECOVERY", "waiting for router recovery (%lu ms)", AppConfig::ROUTER_RECOVERY_WAIT_TIME_MS);
+            Serial.printf("[RECOVERY] waiting for router recovery (%lu ms)\n", AppConfig::ROUTER_RECOVERY_WAIT_TIME_MS);
 
             state.recovery_state = RecoveryState::RecoveryWait;
             state.recovery_until_ms = now + AppConfig::ROUTER_RECOVERY_WAIT_TIME_MS;
@@ -98,7 +96,7 @@ namespace
             state.last_check_ms = 0;
             state.recovery_state = RecoveryState::Monitoring;
 
-            Log::info("WATCHDOG", "Monitoring resumed");
+            Serial.println("[WATCHDOG] Monitoring resumed");
             CommandManager::notifyRouterRecoveryFinished();
         }
     }
@@ -109,16 +107,15 @@ namespace
         {
             state.consecutive_failures++;
 
-            Log::warnf(
-                "WATCHDOG",
-                "Failure count %u/%u",
+            Serial.printf(
+                "[WATCHDOG] WARN Failure count %u/%u\n",
                 state.consecutive_failures,
                 AppConfig::MAX_CONSECUTIVE_FAILURES);
         }
         else if (state.consecutive_failures > 0)
         {
             state.consecutive_failures = 0;
-            Log::info("WATCHDOG", "Failure count cleared");
+            Serial.println("[WATCHDOG] Failure count cleared");
         }
     }
 
@@ -142,14 +139,14 @@ namespace RouterWatchdog
 {
     void begin()
     {
-        Log::info("WATCHDOG", "Monitoring started");
+        Serial.println("[WATCHDOG] Monitoring started");
     }
 
     bool requestRouterReboot()
     {
         if (state.recovery_state != RecoveryState::Monitoring)
         {
-            Log::warn("WATCHDOG", "Recovery request ignored, already recovering");
+            Serial.println("[WATCHDOG] WARN Recovery request ignored, already recovering");
             return false;
         }
 
@@ -181,14 +178,7 @@ namespace RouterWatchdog
 
         rememberStatus(status);
 
-        HeartbeatResponse response = BackendClient::sendHeartbeat(
-            status,
-            state.consecutive_failures);
-
-        if (response.command.has_command)
-        {
-            CommandManager::handleCommand(response.command);
-        }
+        MqttClient::publishHeartbeat(status, state.consecutive_failures);
 
         if (state.consecutive_failures >= AppConfig::MAX_CONSECUTIVE_FAILURES)
         {

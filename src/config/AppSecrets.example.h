@@ -6,10 +6,11 @@
 
 #define ROUTER_WATCHDOG_WIFI_SSID "your-wifi-name"
 #define ROUTER_WATCHDOG_WIFI_PASSWORD "your-wifi-password"
-#define ROUTER_WATCHDOG_BACKEND_URL "https://your-api.example.com/api/v1/heartbeat"
 #define ROUTER_WATCHDOG_DEVICE_ID "router-watchdog-001"
-#define ROUTER_WATCHDOG_BACKEND_SECURE true
-#define ROUTER_WATCHDOG_BACKEND_INSECURE_TLS true
-#define ROUTER_WATCHDOG_ARP_SCAN_ENABLED false
+#define ROUTER_WATCHDOG_MQTT_HOST "192.168.1.10"
+#define ROUTER_WATCHDOG_MQTT_PORT 1883
+#define ROUTER_WATCHDOG_MQTT_USER ""
+#define ROUTER_WATCHDOG_MQTT_PASSWORD ""
+#define ROUTER_WATCHDOG_MQTT_TOPIC_PREFIX "router-watchdog"
 
 #endif

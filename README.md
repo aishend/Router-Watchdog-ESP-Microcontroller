@@ -1,17 +1,15 @@
 # Router Watchdog ESP8266
 
-Firmware for a NodeMCU/ESP8266 that monitors Wi-Fi and internet connectivity, reports health to a backend, accepts remote commands, and power-cycles a router through a relay after repeated failures.
+Firmware for a NodeMCU/ESP8266 that monitors Wi-Fi and internet connectivity, reports health over MQTT, accepts MQTT commands, and power-cycles a router through a relay after repeated failures.
 
 ## What It Does
 
 - Connects to a configured Wi-Fi network.
 - Checks internet access with a TCP connection to `1.1.1.1:80`.
-- Sends heartbeat payloads to a configurable HTTP/HTTPS backend.
-- Accepts backend commands from heartbeat responses.
+- Sends heartbeat payloads to a configurable MQTT broker.
+- Accepts remote commands from MQTT.
 - Reboots the router by controlling a relay.
-- Can reboot the ESP8266 device by backend command.
-- Optionally discovers LAN clients with ARP scan and reports them to the backend.
-- Uses a small centralized serial logger for consistent runtime output.
+- Can reboot the ESP8266 device by MQTT command.
 
 ## Hardware
 
@@ -31,17 +29,16 @@ Use `false` for relay modules that turn on with `HIGH`. Use `true` for relay mod
 
 ```text
 src/
-  backend/       Backend HTTP client and API payloads
-  commands/      Backend command orchestration
+  commands/      Command orchestration
   config/        Build-time configuration and local secrets example
   drivers/       Relay driver
-  logging/       Serial logger
-  network/       Wi-Fi status, internet checks, optional ARP scanner
+  mqtt/          MQTT transport, topics, and payloads
+  network/       Wi-Fi status and internet checks
   watchdog/      Failure tracking and router recovery state machine
   main.cpp       Boot sequence and main loop
 
 docs/
-  backend-api.md Backend API contract and example server
+  mqtt.md        MQTT topics and payloads
 ```
 
 ## Configuration
@@ -69,11 +66,12 @@ Example `AppSecrets.h`:
 ```cpp
 #define ROUTER_WATCHDOG_WIFI_SSID "your-wifi-name"
 #define ROUTER_WATCHDOG_WIFI_PASSWORD "your-wifi-password"
-#define ROUTER_WATCHDOG_BACKEND_URL "https://your-api.example.com/api/v1/heartbeat"
 #define ROUTER_WATCHDOG_DEVICE_ID "router-watchdog-001"
-#define ROUTER_WATCHDOG_BACKEND_SECURE true
-#define ROUTER_WATCHDOG_BACKEND_INSECURE_TLS true
-#define ROUTER_WATCHDOG_ARP_SCAN_ENABLED false
+#define ROUTER_WATCHDOG_MQTT_HOST "192.168.1.10"
+#define ROUTER_WATCHDOG_MQTT_PORT 1883
+#define ROUTER_WATCHDOG_MQTT_USER ""
+#define ROUTER_WATCHDOG_MQTT_PASSWORD ""
+#define ROUTER_WATCHDOG_MQTT_TOPIC_PREFIX "router-watchdog"
 ```
 
 `src/config/AppSecrets.h` is ignored by Git and must not be committed.
@@ -88,45 +86,13 @@ Example `AppSecrets.h`:
 | `MAX_CONSECUTIVE_FAILURES` | `3` | Failures required before router reboot. |
 | `ROUTER_POWER_OFF_TIME_MS` | `10000` | Time to keep router power off. |
 | `ROUTER_RECOVERY_WAIT_TIME_MS` | `10000` | Wait after router power is restored. |
-| `BACKEND_TIMEOUT_MS` | `10000` | Backend request timeout. |
-| `BACKEND_SECURE` | from secrets | Use HTTPS when `true`, HTTP when `false`. |
-| `BACKEND_INSECURE_TLS` | from secrets | Skips TLS certificate validation when HTTPS is enabled. |
-| `ARP_SCAN_ENABLED` | from secrets | Enables optional LAN client discovery. |
-| `NETWORK_SCAN_INTERVAL_MS` | `300000` | Time between ARP discovery scans. |
-| `NETWORK_SCAN_MAX_HOSTS` | `254` | Maximum subnet hosts scanned per pass. |
-| `DEBUG_LOGS_ENABLED` | `false` | Enables verbose payload and scan logs. |
+| `MQTT_HOST` | from secrets | MQTT broker host or IP address. |
+| `MQTT_PORT` | `1883` | MQTT broker port. |
+| `MQTT_TOPIC_PREFIX` | `router-watchdog` | Prefix for all firmware topics. |
+| `MQTT_BUFFER_SIZE` | `512` | MQTT packet buffer size. |
+| `MQTT_RECONNECT_INTERVAL_MS` | `5000` | Time between MQTT reconnect attempts. |
 
-For local HTTP backend development:
-
-```cpp
-#define ROUTER_WATCHDOG_BACKEND_URL "http://192.168.20.14:8080/api/v1/heartbeat"
-#define ROUTER_WATCHDOG_BACKEND_SECURE false
-```
-
-For HTTPS deployments:
-
-```cpp
-#define ROUTER_WATCHDOG_BACKEND_SECURE true
-```
-
-`ROUTER_WATCHDOG_BACKEND_INSECURE_TLS true` is convenient during MVP testing because it skips certificate validation. Do not treat it as production-grade TLS validation.
-
-## Backend Contract
-
-The firmware posts heartbeats to the exact URL configured in `ROUTER_WATCHDOG_BACKEND_URL`, usually:
-
-```text
-POST /api/v1/heartbeat
-```
-
-It also derives these endpoints from the same `/api/v1` base:
-
-```text
-POST /api/v1/command-results
-POST /api/v1/network-clients/report
-```
-
-Read [docs/backend-api.md](docs/backend-api.md) for the complete backend contract, payloads, command format, persistence model, and a minimal Node/Express server.
+Read [docs/mqtt.md](docs/mqtt.md) for the topic contract, payloads, and command format.
 
 Heartbeat payload:
 
@@ -143,32 +109,14 @@ Heartbeat payload:
 }
 ```
 
-Supported backend commands:
+Supported MQTT commands:
 
 | Command | Behavior |
 | --- | --- |
 | `REBOOT_ROUTER` | Starts the relay recovery flow and reports completion after recovery wait. |
 | `REBOOT_DEVICE` | Reports completion, waits briefly, then restarts the ESP8266. |
 
-## Optional ARP Scan
-
-LAN client discovery is disabled by default:
-
-```cpp
-#define ROUTER_WATCHDOG_ARP_SCAN_ENABLED false
-```
-
-Enable it only when the backend needs LAN client reports:
-
-```cpp
-#define ROUTER_WATCHDOG_ARP_SCAN_ENABLED true
-```
-
-When enabled, the firmware scans up to `NETWORK_SCAN_MAX_HOSTS` hosts every `NETWORK_SCAN_INTERVAL_MS` and sends discovered clients to:
-
-```text
-POST /api/v1/network-clients/report
-```
+Heartbeats are skipped while MQTT is disconnected.
 
 ## Build
 
@@ -190,6 +138,7 @@ monitor_dtr = 0
 monitor_rts = 0
 lib_deps =
     bblanchon/ArduinoJson
+    knolleary/PubSubClient
 ```
 
 ## Upload
@@ -212,18 +161,17 @@ Typical startup output:
 [BOOT] Router watchdog starting
 [RELAY] Initializing
 [NETWORK] Initialization started
-[BACKEND] Client initialized
+[MQTT] Client initialized
 [WATCHDOG] Monitoring started
 [BOOT] Waiting for Wi-Fi startup grace period (15000 ms)
-[BOOT] ARP scan=disabled
 ```
 
 Typical healthy operation:
 
 ```text
 [NETWORK] Wi-Fi connected | IP=192.168.1.100 | Gateway=192.168.1.1 | Internet=OK | Failures=0
-[BACKEND] Sending heartbeat via HTTPS POST https://your-api.example.com/api/v1/heartbeat
-[BACKEND] HTTPS heartbeat response status=200
+[MQTT] Connecting to 192.168.1.10:1883
+[MQTT] Connected
 ```
 
 ## Recovery Flow
@@ -241,9 +189,8 @@ The recovery flow is state-based and avoids long blocking delays in the main loo
 
 ## Release Checklist
 
-- `src/config/AppSecrets.h` exists locally and contains real Wi-Fi/backend values.
-- `ROUTER_WATCHDOG_ARP_SCAN_ENABLED` is set intentionally.
+- `src/config/AppSecrets.h` exists locally and contains real Wi-Fi/MQTT values.
 - Relay wiring matches `RELAY_GPIO` and `RELAY_ACTIVE_LOW`.
-- Backend implements the contract in [docs/backend-api.md](docs/backend-api.md).
+- MQTT broker and consumers follow [docs/mqtt.md](docs/mqtt.md).
 - `pio run` succeeds.
-- Real credentials and private backend URLs are not committed.
+- Real credentials and private broker details are not committed.
