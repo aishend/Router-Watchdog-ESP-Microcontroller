@@ -6,14 +6,13 @@
 enum class CommandResultStatus
 {
     Started,
-    Completed,
-    Failed
+    Rejected
 };
 
 struct CommandResult
 {
     String command_id;
-    CommandResultStatus status = CommandResultStatus::Completed;
+    CommandResultStatus status = CommandResultStatus::Rejected;
 };
 
 #endif

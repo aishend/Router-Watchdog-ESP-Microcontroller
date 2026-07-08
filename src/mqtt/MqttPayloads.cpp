@@ -24,24 +24,6 @@ namespace
         return CommandType::None;
     }
 
-    bool commandExpired(const JsonDocument &doc)
-    {
-        if (doc["expiresInSeconds"].is<int32_t>() &&
-            doc["expiresInSeconds"].as<int32_t>() <= 0)
-        {
-            return true;
-        }
-
-        if (doc["expiresAt"].is<unsigned long>())
-        {
-            unsigned long nowSeconds = millis() / 1000UL;
-            unsigned long expiresAt = doc["expiresAt"].as<unsigned long>();
-            return expiresAt <= nowSeconds;
-        }
-
-        return false;
-    }
-
     const char *commandResultStatusToString(CommandResultStatus status)
     {
         switch (status)
@@ -49,14 +31,11 @@ namespace
         case CommandResultStatus::Started:
             return "STARTED";
 
-        case CommandResultStatus::Completed:
-            return "COMPLETED";
-
-        case CommandResultStatus::Failed:
-            return "FAILED";
+        case CommandResultStatus::Rejected:
+            return "REJECTED";
 
         default:
-            return "FAILED";
+            return "REJECTED";
         }
     }
 }
@@ -83,22 +62,9 @@ namespace MqttPayloads
             return false;
         }
 
-        CommandType parsedType = parseCommandType(commandType);
-        if (parsedType == CommandType::None)
-        {
-            Serial.printf("[MQTT] WARN Unknown command type=%s\n", commandType);
-            return false;
-        }
-
-        if (commandExpired(doc))
-        {
-            Serial.printf("[MQTT] WARN Command ignored, expired id=%s\n", commandId);
-            return false;
-        }
-
         command.has_command = true;
         command.id = commandId;
-        command.type = parsedType;
+        command.type = parseCommandType(commandType);
 
         return true;
     }

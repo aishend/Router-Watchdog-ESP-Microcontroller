@@ -119,8 +119,8 @@ Supported MQTT commands:
 
 | Command | Behavior |
 | --- | --- |
-| `REBOOT_ROUTER` | Starts the relay recovery flow and reports completion after recovery wait. |
-| `REBOOT_DEVICE` | Reports completion, waits briefly, then restarts the ESP8266. |
+| `REBOOT_ROUTER` | Publishes `STARTED`, then starts the relay recovery flow. |
+| `REBOOT_DEVICE` | Publishes `STARTED`, waits briefly, then restarts the ESP8266. |
 
 Heartbeats are skipped while MQTT is disconnected.
 
@@ -188,8 +188,8 @@ When connectivity fails `MAX_CONSECUTIVE_FAILURES` times in a row, the watchdog:
 2. Waits for `ROUTER_POWER_OFF_TIME_MS`.
 3. Turns the relay off and restores router power.
 4. Waits for `ROUTER_RECOVERY_WAIT_TIME_MS`.
-5. Clears failure state and resumes monitoring.
-6. Reports command completion if the recovery was triggered by `REBOOT_ROUTER`.
+5. Resumes monitoring and waits for Wi-Fi plus internet confirmation.
+6. Clears failure state and allows future router reboot commands.
 
 The recovery flow is state-based and avoids long blocking delays in the main loop.
 

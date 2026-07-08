@@ -32,7 +32,7 @@ namespace
 
         bool requestRouterReboot()
         {
-            if (recovery_state != RecoveryState::Monitoring)
+            if (!canRequestRouterReboot())
             {
                 Serial.println("[WATCHDOG] WARN Recovery request ignored, already recovering");
                 return false;
@@ -40,6 +40,11 @@ namespace
 
             startRecovery(millis());
             return true;
+        }
+
+        bool canRequestRouterReboot() const
+        {
+            return recovery_state == RecoveryState::Monitoring && !recovery_confirmation_pending;
         }
 
         void tick(unsigned long now)
@@ -68,6 +73,13 @@ namespace
 
             MqttClient::publishHeartbeat(status, consecutive_failures);
 
+            if (recovery_confirmation_pending && !check_failed)
+            {
+                Serial.println("[WATCHDOG] Router recovery confirmed");
+                recovery_confirmation_pending = false;
+                CommandManager::notifyRouterRecoveryFinished();
+            }
+
             if (consecutive_failures >= AppConfig::MAX_CONSECUTIVE_FAILURES)
             {
                 requestRouterReboot();
@@ -81,6 +93,7 @@ namespace
         bool last_wifi_connected = false;
         bool last_internet_connected = false;
         bool have_last_status = false;
+        bool recovery_confirmation_pending = false;
         RecoveryState recovery_state = RecoveryState::Monitoring;
 
         bool checkIntervalElapsed(unsigned long now) const
@@ -143,9 +156,9 @@ namespace
                 have_last_status = false;
                 last_check_ms = 0;
                 recovery_state = RecoveryState::Monitoring;
+                recovery_confirmation_pending = true;
 
-                Serial.println("[WATCHDOG] Monitoring resumed");
-                CommandManager::notifyRouterRecoveryFinished();
+                Serial.println("[WATCHDOG] Monitoring resumed, waiting for network confirmation");
             }
         }
 
@@ -196,6 +209,11 @@ namespace RouterWatchdog
     bool requestRouterReboot()
     {
         return watchdog.requestRouterReboot();
+    }
+
+    bool canRequestRouterReboot()
+    {
+        return watchdog.canRequestRouterReboot();
     }
 
     void tick(unsigned long now)

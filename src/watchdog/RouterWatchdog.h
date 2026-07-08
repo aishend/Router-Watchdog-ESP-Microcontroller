@@ -5,6 +5,7 @@ namespace RouterWatchdog
 {
     void begin();
     void tick(unsigned long now);
+    bool canRequestRouterReboot();
     bool requestRouterReboot();
 }
 
