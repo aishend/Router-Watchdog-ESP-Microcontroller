@@ -16,5 +16,7 @@
 #define ROUTER_WATCHDOG_RELAY_ACTIVE_LOW true // Set explicitly for your relay module.
 // Public CA only. Use \n escapes or a raw string literal; never place the server private key here.
 #define ROUTER_WATCHDOG_MQTT_CA_CERT "-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----\n"
+#define ROUTER_WATCHDOG_SPEEDTEST_DOWNLOAD_URL "https://203.0.113.10/speedtest/download.bin"
+#define ROUTER_WATCHDOG_SPEEDTEST_UPLOAD_URL "https://203.0.113.10/speedtest/upload"
 
 #endif

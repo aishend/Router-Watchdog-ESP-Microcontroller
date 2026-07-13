@@ -22,6 +22,7 @@ router-watchdog/router-watchdog-001/command-results
 router-watchdog/router-watchdog-001/availability
 router-watchdog/router-watchdog-001/firmware/desired
 router-watchdog/router-watchdog-001/firmware/status
+router-watchdog/router-watchdog-001/network-test/results
 ```
 
 ## Published By Firmware
@@ -104,6 +105,20 @@ Failure payloads use `"status": "FAILED"` and include an `error` field. Successf
 installation is confirmed by the new `firmwareVersion` in the heartbeat after the
 automatic restart; the firmware does not publish a `COMPLETED` status.
 
+### network-test/results
+
+Published after the hourly test or `RUN_NETWORK_TEST`:
+
+```json
+{
+  "latencyMs": 85,
+  "downloadKbps": 740,
+  "uploadKbps": 310,
+  "rssi": -67,
+  "success": true
+}
+```
+
 ## Subscribed By Firmware
 
 ### firmware/desired
@@ -147,6 +162,7 @@ Supported command types:
 | --- | --- |
 | `REBOOT_ROUTER` | Publishes `STARTED`, waits `COMMAND_STARTED_TO_RELAY_DELAY_MS`, then starts the relay recovery flow. |
 | `REBOOT_DEVICE` | Publishes `STARTED`, waits briefly, then restarts the ESP8266. |
+| `RUN_NETWORK_TEST` | Runs the configured HTTPS latency/download/upload test when no other operation is active. |
 
 Command rules:
 

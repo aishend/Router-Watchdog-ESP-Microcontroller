@@ -49,6 +49,7 @@ namespace OperationCoordinator
         case DestructiveOperation::RouterRecovery: return "router_recovery";
         case DestructiveOperation::DeviceRebootPending: return "device_reboot_pending";
         case DestructiveOperation::FirmwareUpdate: return "firmware_update";
+        case DestructiveOperation::NetworkTest: return "network_test";
         case DestructiveOperation::Idle:
         default: return "idle";
         }

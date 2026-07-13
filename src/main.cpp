@@ -5,6 +5,7 @@
 #include "drivers/Relay.h"
 #include "mqtt/MqttClient.h"
 #include "network/NetworkManager.h"
+#include "network/NetworkQualityTest.h"
 #include "ota/FirmwareUpdater.h"
 #include "operations/OperationCoordinator.h"
 #include "watchdog/RouterWatchdog.h"
@@ -31,6 +32,7 @@ void setup()
     Relay::begin();
     OperationCoordinator::begin();
     NetworkManager::begin();
+    NetworkQualityTest::begin();
     MqttClient::begin();
     RouterWatchdog::begin();
     CommandManager::begin();
@@ -52,6 +54,7 @@ void loop()
     CommandManager::tick(now);
     FirmwareUpdater::tick(now);
     NetworkManager::tick();
+    NetworkQualityTest::tick(now);
 
     delay(10);
 }

@@ -7,7 +7,8 @@ enum class CommandType
 {
     None,
     RebootRouter,
-    RebootDevice
+    RebootDevice,
+    RunNetworkTest
 };
 
 struct PendingCommand

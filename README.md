@@ -159,3 +159,18 @@ power-off timing, recovery during cooldown, six 20-minute attempts followed by
 four-hour attempts, command rejection during each destructive operation, invalid TLS
 certificate rejection, broker ACL isolation, and a real SHA-256-verified OTA cycle.
 These electrical, timing, broker, and certificate checks cannot be proven by compilation.
+
+## Hourly Network Quality Test
+
+Configure HTTPS endpoints in `AppSecrets.h`:
+
+```cpp
+#define ROUTER_WATCHDOG_SPEEDTEST_DOWNLOAD_URL "https://203.0.113.10/speedtest/download.bin"
+#define ROUTER_WATCHDOG_SPEEDTEST_UPLOAD_URL "https://203.0.113.10/speedtest/upload"
+```
+
+The automatic test runs every 60–65 minutes, only when Internet is known available
+and no recovery, reboot, OTA, or other test is active. It downloads up to 100 KB and
+uploads a generated 50 KB stream. Results are published to `network-test/results`.
+It can also be requested with a non-retained `RUN_NETWORK_TEST` command. Both HTTPS
+endpoints must present certificates issued by the CA configured in the firmware.

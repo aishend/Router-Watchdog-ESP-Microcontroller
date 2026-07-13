@@ -7,6 +7,7 @@ enum class DestructiveOperation
     RouterRecovery,
     DeviceRebootPending,
     FirmwareUpdate,
+    NetworkTest,
 };
 
 namespace OperationCoordinator

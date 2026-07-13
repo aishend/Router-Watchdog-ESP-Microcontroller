@@ -55,6 +55,12 @@
 #ifndef ROUTER_WATCHDOG_FIRMWARE_VERSION
 #define ROUTER_WATCHDOG_FIRMWARE_VERSION "0.1.0"
 #endif
+#ifndef ROUTER_WATCHDOG_SPEEDTEST_DOWNLOAD_URL
+#define ROUTER_WATCHDOG_SPEEDTEST_DOWNLOAD_URL ""
+#endif
+#ifndef ROUTER_WATCHDOG_SPEEDTEST_UPLOAD_URL
+#define ROUTER_WATCHDOG_SPEEDTEST_UPLOAD_URL ""
+#endif
 
 namespace AppConfig
 {
@@ -87,6 +93,12 @@ namespace AppConfig
     constexpr const char *MQTT_CA_CERT = ROUTER_WATCHDOG_MQTT_CA_CERT;
     constexpr time_t TLS_MIN_VALID_EPOCH = 1704067200; // 2024-01-01
     constexpr const char *NTP_SERVERS[] = {"pool.ntp.org", "time.cloudflare.com"};
+    constexpr const char *SPEEDTEST_DOWNLOAD_URL = ROUTER_WATCHDOG_SPEEDTEST_DOWNLOAD_URL;
+    constexpr const char *SPEEDTEST_UPLOAD_URL = ROUTER_WATCHDOG_SPEEDTEST_UPLOAD_URL;
+    constexpr unsigned long SPEEDTEST_INTERVAL_MS = 60UL * 60UL * 1000UL;
+    constexpr unsigned long SPEEDTEST_JITTER_MS = 5UL * 60UL * 1000UL;
+    constexpr size_t SPEEDTEST_DOWNLOAD_BYTES = 100UL * 1024UL;
+    constexpr size_t SPEEDTEST_UPLOAD_BYTES = 50UL * 1024UL;
 
     constexpr bool USE_PRODUCTION_TIMINGS = ROUTER_WATCHDOG_USE_PRODUCTION_TIMINGS;
 

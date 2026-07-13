@@ -4,6 +4,7 @@
 
 #include "../config/AppConfig.h"
 #include "../mqtt/MqttClient.h"
+#include "../network/NetworkQualityTest.h"
 #include "../operations/OperationCoordinator.h"
 #include "../watchdog/RouterWatchdog.h"
 
@@ -64,6 +65,7 @@ namespace
             return RouterWatchdog::isCooldownActive() ? "retry_cooldown_active" : "router_recovery_in_progress";
         case DestructiveOperation::DeviceRebootPending: return "device_reboot_pending";
         case DestructiveOperation::FirmwareUpdate: return "firmware_update_in_progress";
+        case DestructiveOperation::NetworkTest: return "network_test_in_progress";
         case DestructiveOperation::Idle:
         default: return "operation_in_progress";
         }
@@ -71,6 +73,7 @@ namespace
 
     DestructiveOperation operationFor(CommandType type)
     {
+        if (type == CommandType::RunNetworkTest) return DestructiveOperation::NetworkTest;
         return type == CommandType::RebootRouter
                    ? DestructiveOperation::RouterRecovery
                    : DestructiveOperation::DeviceRebootPending;
@@ -121,6 +124,14 @@ namespace
                 Serial.println("[COMMAND] WARN Reserved router recovery could not start");
                 OperationCoordinator::finish(DestructiveOperation::RouterRecovery);
             }
+            activeCommand = PendingCommand();
+            executionState = ExecutionState::Idle;
+            return;
+        }
+
+        if (activeCommand.type == CommandType::RunNetworkTest)
+        {
+            NetworkQualityTest::startReservedTest();
             activeCommand = PendingCommand();
             executionState = ExecutionState::Idle;
             return;

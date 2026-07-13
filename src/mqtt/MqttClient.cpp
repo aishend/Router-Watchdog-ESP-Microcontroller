@@ -196,4 +196,8 @@ namespace MqttClient
     {
         return publishJson("firmware/status", MqttPayloads::buildFirmwareStatus(targetVersion, status, error));
     }
+    bool publishNetworkTestResult(const String &payload)
+    {
+        return publishJson("network-test/results", payload);
+    }
 }

@@ -20,6 +20,10 @@ namespace
         {
             return CommandType::RebootDevice;
         }
+        if (strcmp(type, "RUN_NETWORK_TEST") == 0)
+        {
+            return CommandType::RunNetworkTest;
+        }
 
         return CommandType::None;
     }
