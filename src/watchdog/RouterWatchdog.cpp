@@ -27,8 +27,9 @@ namespace
 
         void tick(unsigned long now)
         {
-            serviceRelayTimers(now);
+            restoreRouterPowerWhenDue(now);
             consumeNetworkResult(now);
+            startCooldownRetryWhenDue(now);
             scheduleNetworkCheck(now);
         }
 
@@ -84,7 +85,7 @@ namespace
                        : AppConfig::SLOW_RECOVERY_INTERVAL_MS;
         }
 
-        void serviceRelayTimers(unsigned long now)
+        void restoreRouterPowerWhenDue(unsigned long now)
         {
             if (recoveryState == RecoveryState::PowerOff && deadlineReached(now, stateDeadlineMs))
             {
@@ -93,9 +94,11 @@ namespace
                 stateDeadlineMs = now + recoveryInterval();
                 lastCheckMs = 0;
                 Serial.printf("[RECOVERY] Router power restored; observation window=%lu ms\n", recoveryInterval());
-                return;
             }
+        }
 
+        void startCooldownRetryWhenDue(unsigned long now)
+        {
             if (recoveryState == RecoveryState::RecoveryCooldown && deadlineReached(now, stateDeadlineMs))
             {
                 startRecovery(now);

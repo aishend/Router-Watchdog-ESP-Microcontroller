@@ -175,7 +175,8 @@ namespace FirmwareUpdater
 
         if (!acceptedPublished)
         {
-            acceptedPublished = MqttClient::publishFirmwareStatus(pendingRequest.version, "ACCEPTED");
+            MqttClient::publishFirmwareStatus(pendingRequest.version, "ACCEPTED");
+            acceptedPublished = true;
         }
 
         if (!OperationCoordinator::isIdle() || !RouterWatchdog::canStartFirmwareUpdate() ||
