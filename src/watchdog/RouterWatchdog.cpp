@@ -2,11 +2,11 @@
 
 #include <Arduino.h>
 
-#include "../commands/CommandManager.h"
 #include "../config/AppConfig.h"
 #include "../drivers/Relay.h"
 #include "../mqtt/MqttClient.h"
 #include "../network/NetworkManager.h"
+#include "../operations/OperationCoordinator.h"
 
 namespace
 {
@@ -14,13 +14,8 @@ namespace
     {
         Monitoring,
         PowerOff,
-        RecoveryWait,
+        RecoveryCooldown,
     };
-
-    bool hasElapsed(unsigned long now, unsigned long deadline)
-    {
-        return static_cast<long>(now - deadline) >= 0;
-    }
 
     class WatchdogController
     {
@@ -30,11 +25,23 @@ namespace
             Serial.println("[WATCHDOG] Monitoring started");
         }
 
+        void tick(unsigned long now)
+        {
+            serviceRelayTimers(now);
+            consumeNetworkResult(now);
+            scheduleNetworkCheck(now);
+        }
+
         bool requestRouterReboot()
         {
-            if (!canRequestRouterReboot())
+            if (recoveryState != RecoveryState::Monitoring)
             {
-                Serial.println("[WATCHDOG] WARN Recovery request ignored, already recovering");
+                return false;
+            }
+
+            if (!OperationCoordinator::isActive(DestructiveOperation::RouterRecovery) &&
+                !OperationCoordinator::tryStart(DestructiveOperation::RouterRecovery))
+            {
                 return false;
             }
 
@@ -44,161 +51,153 @@ namespace
 
         bool canRequestRouterReboot() const
         {
-            return recovery_state == RecoveryState::Monitoring && !recovery_confirmation_pending;
+            return recoveryState == RecoveryState::Monitoring && OperationCoordinator::isIdle();
         }
 
-        void tick(unsigned long now)
+        bool canStartFirmwareUpdate() const
         {
-            continueRecovery(now);
+            return recoveryState == RecoveryState::Monitoring;
+        }
 
-            if (recovery_state != RecoveryState::Monitoring ||
-                !checkIntervalElapsed(now))
+        bool isRecovering() const { return recoveryState != RecoveryState::Monitoring; }
+        bool isCooldownActive() const { return recoveryState == RecoveryState::RecoveryCooldown; }
+
+    private:
+        RecoveryState recoveryState = RecoveryState::Monitoring;
+        uint8_t consecutiveFailures = 0;
+        uint8_t fastRecoveryAttempts = 0;
+        unsigned long stateDeadlineMs = 0;
+        unsigned long lastCheckMs = 0;
+        bool checkRequested = false;
+        bool haveLastStatus = false;
+        NetworkStatus lastStatus;
+
+        static bool deadlineReached(unsigned long now, unsigned long deadline)
+        {
+            return static_cast<long>(now - deadline) >= 0;
+        }
+
+        unsigned long recoveryInterval() const
+        {
+            return fastRecoveryAttempts < AppConfig::FAST_RECOVERY_ATTEMPTS
+                       ? AppConfig::FAST_RECOVERY_INTERVAL_MS
+                       : AppConfig::SLOW_RECOVERY_INTERVAL_MS;
+        }
+
+        void serviceRelayTimers(unsigned long now)
+        {
+            if (recoveryState == RecoveryState::PowerOff && deadlineReached(now, stateDeadlineMs))
+            {
+                Relay::turnOff();
+                recoveryState = RecoveryState::RecoveryCooldown;
+                stateDeadlineMs = now + recoveryInterval();
+                lastCheckMs = 0;
+                Serial.printf("[RECOVERY] Router power restored; observation window=%lu ms\n", recoveryInterval());
+                return;
+            }
+
+            if (recoveryState == RecoveryState::RecoveryCooldown && deadlineReached(now, stateDeadlineMs))
+            {
+                startRecovery(now);
+            }
+        }
+
+        void scheduleNetworkCheck(unsigned long now)
+        {
+            if (checkRequested)
             {
                 return;
             }
 
-            last_check_ms = now;
-
-            NetworkStatus status = NetworkManager::checkStatus();
-            bool check_failed = !status.wifi_connected || !status.internet_connected;
-
-            updateFailureCount(check_failed);
-
-            if (shouldLogStatus(status, check_failed))
+            if (lastCheckMs != 0 && now - lastCheckMs < AppConfig::CHECK_INTERVAL_MS)
             {
-                logNetworkStatus(status);
+                return;
             }
 
-            rememberStatus(status);
-
-            MqttClient::publishHeartbeat(status, consecutive_failures);
-
-            if (recovery_confirmation_pending && !check_failed)
-            {
-                Serial.println("[WATCHDOG] Router recovery confirmed");
-                recovery_confirmation_pending = false;
-                CommandManager::notifyRouterRecoveryFinished();
-            }
-
-            if (consecutive_failures >= AppConfig::MAX_CONSECUTIVE_FAILURES)
-            {
-                if (CommandManager::hasRouterRebootPendingOrInProgress())
-                {
-                    Serial.println("[WATCHDOG] Auto recovery skipped, router reboot command pending");
-                    return;
-                }
-
-                requestRouterReboot();
-            }
+            lastCheckMs = now;
+            checkRequested = true;
+            NetworkManager::requestStatusCheck();
         }
 
-    private:
-        uint8_t consecutive_failures = 0;
-        unsigned long last_check_ms = 0;
-        unsigned long recovery_until_ms = 0;
-        bool last_wifi_connected = false;
-        bool last_internet_connected = false;
-        bool have_last_status = false;
-        bool recovery_confirmation_pending = false;
-        RecoveryState recovery_state = RecoveryState::Monitoring;
-
-        bool checkIntervalElapsed(unsigned long now) const
+        void consumeNetworkResult(unsigned long now)
         {
-            return last_check_ms == 0 ||
-                   now - last_check_ms >= AppConfig::CHECK_INTERVAL_MS;
-        }
-
-        void logNetworkStatus(const NetworkStatus &status) const
-        {
-            if (status.wifi_connected)
+            NetworkStatus status;
+            if (!NetworkManager::takeStatusResult(status))
             {
-                Serial.printf(
-                    "[NETWORK] Wi-Fi connected | IP=%s | Gateway=%s | Internet=%s | Failures=%u\n",
-                    status.ip_address.toString().c_str(),
-                    status.gateway_address.toString().c_str(),
-                    status.internet_connected ? "OK" : "DOWN",
-                    consecutive_failures);
+                return;
             }
-            else
+
+            checkRequested = false;
+            const bool healthy = status.wifi_connected && status.internet_connected;
+            updateFailureCount(!healthy);
+            logStatusWhenUseful(status, !healthy);
+            lastStatus = status;
+            haveLastStatus = true;
+            MqttClient::publishHeartbeat(status, consecutiveFailures);
+
+            if (healthy && recoveryState == RecoveryState::RecoveryCooldown)
             {
-                Serial.printf("[NETWORK] Wi-Fi not connected | Failures=%u\n", consecutive_failures);
+                finishRecovery();
+                return;
+            }
+
+            if (!healthy && recoveryState == RecoveryState::Monitoring &&
+                consecutiveFailures >= AppConfig::MAX_CONSECUTIVE_FAILURES &&
+                OperationCoordinator::isIdle())
+            {
+                OperationCoordinator::tryStart(DestructiveOperation::RouterRecovery);
+                startRecovery(now);
             }
         }
 
         void startRecovery(unsigned long now)
         {
-            Serial.println("[WATCHDOG] WARN Recovery triggered");
+            if (fastRecoveryAttempts < AppConfig::FAST_RECOVERY_ATTEMPTS)
+            {
+                fastRecoveryAttempts++;
+            }
 
-            Serial.println("[RECOVERY] relay ON, router power removed");
             Relay::turnOn();
-
-            recovery_state = RecoveryState::PowerOff;
-            recovery_until_ms = now + AppConfig::ROUTER_POWER_OFF_TIME_MS;
+            recoveryState = RecoveryState::PowerOff;
+            stateDeadlineMs = now + AppConfig::ROUTER_POWER_OFF_TIME_MS;
+            Serial.printf("[RECOVERY] Relay ON; fast attempt=%u/%u\n",
+                          fastRecoveryAttempts, AppConfig::FAST_RECOVERY_ATTEMPTS);
         }
 
-        void continueRecovery(unsigned long now)
+        void finishRecovery()
         {
-            if (recovery_state == RecoveryState::Monitoring ||
-                !hasElapsed(now, recovery_until_ms))
+            consecutiveFailures = 0;
+            fastRecoveryAttempts = 0;
+            recoveryState = RecoveryState::Monitoring;
+            OperationCoordinator::finish(DestructiveOperation::RouterRecovery);
+            Serial.println("[RECOVERY] Network confirmed; recovery state reset");
+        }
+
+        void updateFailureCount(bool failed)
+        {
+            if (failed && consecutiveFailures < AppConfig::MAX_CONSECUTIVE_FAILURES)
+            {
+                consecutiveFailures++;
+            }
+            else if (!failed)
+            {
+                consecutiveFailures = 0;
+            }
+        }
+
+        void logStatusWhenUseful(const NetworkStatus &status, bool failed) const
+        {
+            if (haveLastStatus && !failed &&
+                status.wifi_connected == lastStatus.wifi_connected &&
+                status.internet_connected == lastStatus.internet_connected)
             {
                 return;
             }
 
-            if (recovery_state == RecoveryState::PowerOff)
-            {
-                Serial.println("[RECOVERY] relay OFF, router power restored");
-                Relay::turnOff();
-
-                Serial.printf("[RECOVERY] waiting for router recovery (%lu ms)\n", AppConfig::ROUTER_RECOVERY_WAIT_TIME_MS);
-
-                recovery_state = RecoveryState::RecoveryWait;
-                recovery_until_ms = now + AppConfig::ROUTER_RECOVERY_WAIT_TIME_MS;
-                return;
-            }
-
-            if (recovery_state == RecoveryState::RecoveryWait)
-            {
-                consecutive_failures = 0;
-                have_last_status = false;
-                last_check_ms = 0;
-                recovery_state = RecoveryState::Monitoring;
-                recovery_confirmation_pending = true;
-
-                Serial.println("[WATCHDOG] Monitoring resumed, waiting for network confirmation");
-            }
-        }
-
-        void updateFailureCount(bool check_failed)
-        {
-            if (check_failed)
-            {
-                consecutive_failures++;
-
-                Serial.printf(
-                    "[WATCHDOG] WARN Failure count %u/%u\n",
-                    consecutive_failures,
-                    AppConfig::MAX_CONSECUTIVE_FAILURES);
-            }
-            else if (consecutive_failures > 0)
-            {
-                consecutive_failures = 0;
-                Serial.println("[WATCHDOG] Failure count cleared");
-            }
-        }
-
-        bool shouldLogStatus(const NetworkStatus &status, bool check_failed) const
-        {
-            return !have_last_status ||
-                   status.wifi_connected != last_wifi_connected ||
-                   status.internet_connected != last_internet_connected ||
-                   check_failed;
-        }
-
-        void rememberStatus(const NetworkStatus &status)
-        {
-            last_wifi_connected = status.wifi_connected;
-            last_internet_connected = status.internet_connected;
-            have_last_status = true;
+            Serial.printf("[NETWORK] Wi-Fi=%s Internet=%s Failures=%u\n",
+                          status.wifi_connected ? "OK" : "DOWN",
+                          status.internet_connected ? "OK" : "DOWN",
+                          consecutiveFailures);
         }
     };
 
@@ -207,23 +206,11 @@ namespace
 
 namespace RouterWatchdog
 {
-    void begin()
-    {
-        watchdog.begin();
-    }
-
-    bool requestRouterReboot()
-    {
-        return watchdog.requestRouterReboot();
-    }
-
-    bool canRequestRouterReboot()
-    {
-        return watchdog.canRequestRouterReboot();
-    }
-
-    void tick(unsigned long now)
-    {
-        watchdog.tick(now);
-    }
+    void begin() { watchdog.begin(); }
+    void tick(unsigned long now) { watchdog.tick(now); }
+    bool requestRouterReboot() { return watchdog.requestRouterReboot(); }
+    bool canRequestRouterReboot() { return watchdog.canRequestRouterReboot(); }
+    bool canStartFirmwareUpdate() { return watchdog.canStartFirmwareUpdate(); }
+    bool isRecovering() { return watchdog.isRecovering(); }
+    bool isCooldownActive() { return watchdog.isCooldownActive(); }
 }

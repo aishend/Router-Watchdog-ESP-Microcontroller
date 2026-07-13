@@ -4,133 +4,130 @@
 
 #include "../config/AppConfig.h"
 #include "../mqtt/MqttClient.h"
+#include "../operations/OperationCoordinator.h"
 #include "../watchdog/RouterWatchdog.h"
-#include "CommandResult.h"
 
 namespace
 {
     constexpr uint8_t COMMAND_HISTORY_SIZE = 8;
     constexpr unsigned long DEVICE_REBOOT_DELAY_MS = 500;
 
-    PendingCommand queuedCommand;
-    PendingCommand routerStartCommand;
-    bool hasQueuedCommand = false;
-    bool routerStartPending = false;
-    bool routerCommandInProgress = false;
-    bool deviceRebootPending = false;
-    unsigned long routerStartAtMs = 0;
-    unsigned long deviceRebootAtMs = 0;
+    enum class ExecutionState
+    {
+        Idle,
+        PublishingStarted,
+        WaitingToExecute,
+    };
+
+    PendingCommand activeCommand;
+    ExecutionState executionState = ExecutionState::Idle;
+    uint8_t publishAttempts = 0;
+    unsigned long nextActionMs = 0;
     String commandHistory[COMMAND_HISTORY_SIZE];
-    uint8_t nextCommandHistoryIndex = 0;
+    uint8_t historyIndex = 0;
 
-    CommandResult makeCommandResult(const PendingCommand &command, CommandResultStatus status)
+    bool deadlineReached(unsigned long now, unsigned long deadline)
     {
-        CommandResult result;
-        result.command_id = command.id;
-        result.status = status;
-        return result;
+        return static_cast<long>(now - deadline) >= 0;
     }
 
-    bool sendCommandResult(const PendingCommand &command, CommandResultStatus status)
+    bool commandSeen(const String &id)
     {
-        CommandResult result = makeCommandResult(command, status);
-
-        bool sent = MqttClient::publishCommandResult(result);
-
-        if (!sent)
+        for (const String &knownId : commandHistory)
         {
-            Serial.println("[COMMAND_MANAGER] WARN Command result delivery failed");
+            if (knownId == id) return true;
         }
-
-        return sent;
-    }
-
-    bool commandSeen(const String &commandId)
-    {
-        for (uint8_t i = 0; i < COMMAND_HISTORY_SIZE; i++)
-        {
-            if (commandHistory[i] == commandId)
-            {
-                return true;
-            }
-        }
-
         return false;
     }
 
-    void rememberCommand(const String &commandId)
+    void rememberCommand(const String &id)
     {
-        commandHistory[nextCommandHistoryIndex] = commandId;
-        nextCommandHistoryIndex = (nextCommandHistoryIndex + 1) % COMMAND_HISTORY_SIZE;
+        commandHistory[historyIndex] = id;
+        historyIndex = (historyIndex + 1) % COMMAND_HISTORY_SIZE;
     }
 
-    bool canQueueCommand()
+    void publishRejection(const PendingCommand &command, const char *reason)
     {
-        return !hasQueuedCommand && !routerStartPending && !deviceRebootPending;
+        CommandResult result;
+        result.command_id = command.id;
+        result.status = CommandResultStatus::Rejected;
+        result.reason = reason;
+        MqttClient::publishCommandResult(result);
+        Serial.printf("[COMMAND] Rejected id=%s reason=%s\n", command.id.c_str(), reason);
     }
 
-    void rejectCommand(const PendingCommand &command, const char *reason)
+    const char *operationConflictReason()
     {
-        Serial.printf("[COMMAND_MANAGER] WARN Command rejected id=%s reason=%s\n", command.id.c_str(), reason);
-        sendCommandResult(command, CommandResultStatus::Rejected);
-    }
-
-    void executeRouterReboot()
-    {
-        if (!RouterWatchdog::canRequestRouterReboot())
+        switch (OperationCoordinator::current())
         {
-            PendingCommand command = queuedCommand;
-            queuedCommand = PendingCommand();
-            hasQueuedCommand = false;
-            rejectCommand(command, "watchdog_not_ready");
+        case DestructiveOperation::RouterRecovery:
+            return RouterWatchdog::isCooldownActive() ? "retry_cooldown_active" : "router_recovery_in_progress";
+        case DestructiveOperation::DeviceRebootPending: return "device_reboot_pending";
+        case DestructiveOperation::FirmwareUpdate: return "firmware_update_in_progress";
+        case DestructiveOperation::Idle:
+        default: return "operation_in_progress";
+        }
+    }
+
+    DestructiveOperation operationFor(CommandType type)
+    {
+        return type == CommandType::RebootRouter
+                   ? DestructiveOperation::RouterRecovery
+                   : DestructiveOperation::DeviceRebootPending;
+    }
+
+    void finishStartedPublication(unsigned long now, bool confirmed)
+    {
+        if (!confirmed)
+        {
+            Serial.printf("[COMMAND] WARN Executing id=%s without MQTT STARTED confirmation\n",
+                          activeCommand.id.c_str());
+        }
+
+        executionState = ExecutionState::WaitingToExecute;
+        nextActionMs = now + (activeCommand.type == CommandType::RebootRouter
+                                  ? AppConfig::COMMAND_STARTED_TO_RELAY_DELAY_MS
+                                  : DEVICE_REBOOT_DELAY_MS);
+    }
+
+    void tryPublishStarted(unsigned long now)
+    {
+        CommandResult result;
+        result.command_id = activeCommand.id;
+        result.status = CommandResultStatus::Started;
+        publishAttempts++;
+
+        if (MqttClient::publishCommandResult(result))
+        {
+            finishStartedPublication(now, true);
             return;
         }
 
-        if (!sendCommandResult(queuedCommand, CommandResultStatus::Started))
+        if (publishAttempts >= AppConfig::COMMAND_RESULT_MAX_ATTEMPTS)
         {
+            finishStartedPublication(now, false);
             return;
         }
 
-        routerStartCommand = queuedCommand;
-        routerStartPending = true;
-        routerStartAtMs = millis() + AppConfig::COMMAND_STARTED_TO_RELAY_DELAY_MS;
-        queuedCommand = PendingCommand();
-        hasQueuedCommand = false;
-        Serial.printf("[COMMAND_MANAGER] Router relay action scheduled in %lu ms\n", AppConfig::COMMAND_STARTED_TO_RELAY_DELAY_MS);
+        nextActionMs = now + AppConfig::COMMAND_RESULT_RETRY_INTERVAL_MS;
     }
 
-    void startPendingRouterReboot()
+    void executeAcceptedCommand()
     {
-        if (!RouterWatchdog::requestRouterReboot())
+        if (activeCommand.type == CommandType::RebootRouter)
         {
-            Serial.println("[COMMAND_MANAGER] WARN Router reboot command failed to start");
-            routerStartCommand = PendingCommand();
-            routerStartPending = false;
+            if (!RouterWatchdog::requestRouterReboot())
+            {
+                Serial.println("[COMMAND] WARN Reserved router recovery could not start");
+                OperationCoordinator::finish(DestructiveOperation::RouterRecovery);
+            }
+            activeCommand = PendingCommand();
+            executionState = ExecutionState::Idle;
             return;
         }
 
-        routerCommandInProgress = true;
-        routerStartCommand = PendingCommand();
-        routerStartPending = false;
-    }
-
-    void executeDeviceReboot(unsigned long now)
-    {
-        if (!sendCommandResult(queuedCommand, CommandResultStatus::Started))
-        {
-            return;
-        }
-
-        Serial.println("[COMMAND_MANAGER] Reboot device command started");
-        queuedCommand = PendingCommand();
-        hasQueuedCommand = false;
-        deviceRebootPending = true;
-        deviceRebootAtMs = now + DEVICE_REBOOT_DELAY_MS;
-    }
-
-    bool hasElapsed(unsigned long now, unsigned long deadline)
-    {
-        return static_cast<long>(now - deadline) >= 0;
+        Serial.println("[COMMAND] Rebooting device");
+        ESP.restart();
     }
 }
 
@@ -138,105 +135,64 @@ namespace CommandManager
 {
     void begin()
     {
-        queuedCommand = PendingCommand();
-        routerStartCommand = PendingCommand();
-        hasQueuedCommand = false;
-        routerStartPending = false;
-        routerCommandInProgress = false;
-        deviceRebootPending = false;
-        nextCommandHistoryIndex = 0;
-
-        for (uint8_t i = 0; i < COMMAND_HISTORY_SIZE; i++)
-        {
-            commandHistory[i] = "";
-        }
-
-        Serial.println("[COMMAND_MANAGER] Initialized");
+        activeCommand = PendingCommand();
+        executionState = ExecutionState::Idle;
+        historyIndex = 0;
+        for (String &id : commandHistory) id = "";
+        Serial.println("[COMMAND] Manager initialized");
     }
 
     void handleCommand(const PendingCommand &command)
     {
-        if (!command.has_command)
-        {
-            return;
-        }
+        if (!command.has_command) return;
 
         if (commandSeen(command.id))
         {
-            rejectCommand(command, "duplicate_command_id");
+            publishRejection(command, "duplicate_command_id");
             return;
         }
-
         rememberCommand(command.id);
-
-        if (!canQueueCommand())
-        {
-            rejectCommand(command, "command_already_queued");
-            return;
-        }
 
         if (command.type == CommandType::None)
         {
-            rejectCommand(command, "unknown_type");
+            publishRejection(command, "unknown_type");
             return;
         }
 
-        if (command.type == CommandType::RebootRouter && routerCommandInProgress)
+        if (!OperationCoordinator::isIdle() || executionState != ExecutionState::Idle)
         {
-            rejectCommand(command, "router_reboot_in_progress");
+            publishRejection(command, operationConflictReason());
             return;
         }
 
-        queuedCommand = command;
-        hasQueuedCommand = true;
-        Serial.printf("[COMMAND_MANAGER] Command queued id=%s\n", command.id.c_str());
+        if (!OperationCoordinator::tryStart(operationFor(command.type)))
+        {
+            publishRejection(command, "operation_in_progress");
+            return;
+        }
+
+        activeCommand = command;
+        executionState = ExecutionState::PublishingStarted;
+        publishAttempts = 0;
+        nextActionMs = millis();
+        Serial.printf("[COMMAND] Accepted id=%s\n", command.id.c_str());
     }
 
     void tick(unsigned long now)
     {
-        if (deviceRebootPending && hasElapsed(now, deviceRebootAtMs))
-        {
-            ESP.restart();
-        }
+        if (executionState == ExecutionState::Idle || !deadlineReached(now, nextActionMs)) return;
 
-        if (routerStartPending && hasElapsed(now, routerStartAtMs))
+        if (executionState == ExecutionState::PublishingStarted)
         {
-            startPendingRouterReboot();
-        }
-
-        if (!hasQueuedCommand)
-        {
+            tryPublishStarted(now);
             return;
         }
 
-        switch (queuedCommand.type)
-        {
-        case CommandType::RebootRouter:
-            executeRouterReboot();
-            return;
-
-        case CommandType::RebootDevice:
-            executeDeviceReboot(now);
-            return;
-
-        case CommandType::None:
-        default:
-            rejectCommand(queuedCommand, "unknown_type");
-            queuedCommand = PendingCommand();
-            hasQueuedCommand = false;
-            return;
-        }
+        executeAcceptedCommand();
     }
 
     bool hasRouterRebootPendingOrInProgress()
     {
-        return routerStartPending ||
-               routerCommandInProgress ||
-               (hasQueuedCommand && queuedCommand.type == CommandType::RebootRouter);
-    }
-
-    void notifyRouterRecoveryFinished()
-    {
-        routerCommandInProgress = false;
+        return OperationCoordinator::isActive(DestructiveOperation::RouterRecovery);
     }
 }

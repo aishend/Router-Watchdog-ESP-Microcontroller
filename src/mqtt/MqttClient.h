@@ -10,6 +10,7 @@ namespace MqttClient
     void tick(unsigned long now);
     bool publishHeartbeat(const NetworkStatus &status, uint8_t failures);
     bool publishCommandResult(const CommandResult &result);
+    bool publishFirmwareStatus(const String &targetVersion, const char *status, const String &error = "");
 }
 
 #endif

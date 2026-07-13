@@ -5,6 +5,8 @@
 #include "drivers/Relay.h"
 #include "mqtt/MqttClient.h"
 #include "network/NetworkManager.h"
+#include "ota/FirmwareUpdater.h"
+#include "operations/OperationCoordinator.h"
 #include "watchdog/RouterWatchdog.h"
 
 namespace
@@ -27,10 +29,12 @@ void setup()
     }
 
     Relay::begin();
+    OperationCoordinator::begin();
     NetworkManager::begin();
     MqttClient::begin();
     RouterWatchdog::begin();
     CommandManager::begin();
+    FirmwareUpdater::begin();
 
     Serial.printf("[BOOT] Waiting for Wi-Fi startup grace period (%lu ms)\n", AppConfig::STARTUP_GRACE_PERIOD_MS);
 }
@@ -39,13 +43,15 @@ void loop()
 {
     unsigned long now = millis();
 
-    MqttClient::tick(now);
-
     if (startupGracePeriodElapsed(now))
     {
         RouterWatchdog::tick(now);
-        CommandManager::tick(now);
     }
+
+    MqttClient::tick(now);
+    CommandManager::tick(now);
+    FirmwareUpdater::tick(now);
+    NetworkManager::tick();
 
     delay(10);
 }

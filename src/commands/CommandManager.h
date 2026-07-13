@@ -9,7 +9,6 @@ namespace CommandManager
     void handleCommand(const PendingCommand &command);
     void tick(unsigned long now);
     bool hasRouterRebootPendingOrInProgress();
-    void notifyRouterRecoveryFinished();
 }
 
 #endif

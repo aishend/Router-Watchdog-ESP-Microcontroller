@@ -13,6 +13,7 @@ struct CommandResult
 {
     String command_id;
     CommandResultStatus status = CommandResultStatus::Rejected;
+    String reason;
 };
 
 #endif

@@ -7,6 +7,7 @@ namespace Relay
     void begin();
     void turnOn();
     void turnOff();
+    bool isActive();
 
 }
 

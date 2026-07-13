@@ -42,6 +42,32 @@ namespace
 
 namespace MqttPayloads
 {
+    bool parseFirmwareUpdate(const byte *payload, unsigned int length, FirmwareUpdateRequest &request)
+    {
+        JsonDocument doc;
+        DeserializationError error = deserializeJson(doc, payload, length);
+        if (error)
+        {
+            Serial.printf("[MQTT] WARN Invalid firmware JSON: %s\n", error.c_str());
+            return false;
+        }
+
+        const char *version = doc["version"] | "";
+        const char *url = doc["url"] | "";
+        const char *sha256 = doc["sha256"] | "";
+        if (version[0] == '\0' || url[0] == '\0' || strlen(sha256) != 64)
+        {
+            Serial.println("[MQTT] WARN Firmware request requires version, url and 64-character sha256");
+            return false;
+        }
+
+        request.pending = true;
+        request.version = version;
+        request.url = url;
+        request.sha256 = sha256;
+        return true;
+    }
+
     bool parseCommand(const byte *payload, unsigned int length, PendingCommand &command)
     {
         JsonDocument doc;
@@ -96,6 +122,26 @@ namespace MqttPayloads
 
         doc["commandId"] = result.command_id;
         doc["status"] = commandResultStatusToString(result.status);
+        if (result.reason.length() > 0)
+        {
+            doc["reason"] = result.reason;
+        }
+
+        String json;
+        serializeJson(doc, json);
+        return json;
+    }
+
+    String buildFirmwareStatus(const String &targetVersion, const char *status, const String &error)
+    {
+        JsonDocument doc;
+        doc["currentVersion"] = AppConfig::FIRMWARE_VERSION;
+        doc["targetVersion"] = targetVersion;
+        doc["status"] = status;
+        if (error.length() > 0)
+        {
+            doc["error"] = error;
+        }
 
         String json;
         serializeJson(doc, json);

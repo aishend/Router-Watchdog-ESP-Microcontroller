@@ -7,7 +7,10 @@ namespace NetworkManager
 {
 
     void begin();
-    NetworkStatus checkStatus();
+    void tick();
+    void requestStatusCheck();
+    bool takeStatusResult(NetworkStatus &status);
+    bool internetIsKnownAvailable();
 
 }
 

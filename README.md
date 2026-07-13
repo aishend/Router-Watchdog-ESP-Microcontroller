@@ -1,222 +1,161 @@
 # Router Watchdog ESP8266
 
-Firmware for a NodeMCU/ESP8266 that monitors Wi-Fi and internet connectivity, reports health over MQTT, accepts MQTT commands, and power-cycles a router through a relay after repeated failures.
+Firmware for an ESP8266 that monitors Wi-Fi and Internet access, reports health over
+MQTT/TLS, power-cycles a router through a relay, accepts remote commands, and installs
+verified OTA releases.
 
-## What It Does
+## Safety First
 
-- Connects to a configured Wi-Fi network.
-- Checks internet access with TCP connections to multiple configured targets.
-- Sends heartbeat payloads to a configurable MQTT broker.
-- Accepts remote commands from MQTT.
-- Reboots the router by controlling a relay.
-- Can reboot the ESP8266 device by MQTT command.
+The ESP8266 and relay must be powered independently from the router. Otherwise the
+controller turns itself off and cannot restore router power.
 
-## Hardware
-
-- NodeMCU ESP8266 ESP-12E.
-- Relay module connected to `D2` / `GPIO4`.
-- Stable power supply for the ESP8266 and relay.
-
-Relay behavior is controlled by `RELAY_ACTIVE_LOW` in `src/config/AppConfig.h`:
+Relay polarity is deliberately required in the local `src/config/AppSecrets.h`:
 
 ```cpp
-constexpr bool RELAY_ACTIVE_LOW = false;
+#define ROUTER_WATCHDOG_RELAY_ACTIVE_LOW true
 ```
 
-Use `false` for relay modules that turn on with `HIGH`. Use `true` for relay modules that turn on with `LOW`.
+- Use `true` only when the relay activates with LOW.
+- Use `false` only when it activates with HIGH.
+- Test first with the router disconnected, using the relay LED or a multimeter.
+- Add the appropriate physical pull-up/pull-down so the relay remains inactive while
+  the ESP pin is high impedance during boot.
 
-## Project Structure
+An incorrect value can cut router power during startup. The driver writes the inactive
+level before changing the GPIO to OUTPUT, then confirms that level again.
+
+## Architecture
 
 ```text
 src/
-  commands/      Command orchestration and command result types
+  commands/      MQTT command lifecycle and bounded publication retries
   config/        Build-time configuration and local secrets example
-  drivers/       Relay driver
-  mqtt/          MQTT transport, topics, command parsing, and payload builders
-  network/       Wi-Fi status and internet checks
-  watchdog/      Failure tracking and router recovery state machine
-  main.cpp       Boot sequence and main loop
-
-docs/
-  mqtt.md        MQTT topics and payloads
+  drivers/       Fail-safe relay driver
+  mqtt/          MQTT/TLS transport, topics and JSON payloads
+  network/       Incremental round-robin connectivity probes
+  operations/    Exclusive destructive-operation coordinator
+  ota/           HTTPS download, size and SHA-256 verification
+  watchdog/      Recovery state machine and retry policy
 ```
+
+Only one destructive operation can exist: router recovery, pending device reboot, or
+firmware update. Relay timers run before network work in every loop.
 
 ## Configuration
 
-Default public configuration lives in:
-
-```text
-src/config/AppConfig.h
-```
-
-Private local values should live in:
-
-```text
-src/config/AppSecrets.h
-```
-
-Create it from the example:
+Copy the example and fill in local values:
 
 ```bash
 cp src/config/AppSecrets.example.h src/config/AppSecrets.h
 ```
 
-Example `AppSecrets.h`:
-
-```cpp
-#define ROUTER_WATCHDOG_WIFI_SSID "your-wifi-name"
-#define ROUTER_WATCHDOG_WIFI_PASSWORD "your-wifi-password"
-#define ROUTER_WATCHDOG_DEVICE_ID "router-watchdog-001"
-#define ROUTER_WATCHDOG_MQTT_HOST "192.168.1.10"
-#define ROUTER_WATCHDOG_MQTT_PORT 1883
-#define ROUTER_WATCHDOG_MQTT_USER "your-mqtt-user"
-#define ROUTER_WATCHDOG_MQTT_PASSWORD "your-mqtt-password"
-#define ROUTER_WATCHDOG_MQTT_TOPIC_PREFIX "router-watchdog"
-#define ROUTER_WATCHDOG_USE_PRODUCTION_TIMINGS false
-```
-
-`src/config/AppSecrets.h` is ignored by Git and must not be committed.
-
-## Important Settings
+Important settings:
 
 | Setting | Default | Purpose |
-| --- | --- | --- |
-| `SERIAL_BAUD` | `74880` | Serial monitor speed. |
-| `INTERNET_TEST_HOSTS` | `1.1.1.1`, `8.8.8.8`, `9.9.9.9` | Connectivity targets. Internet is OK when any target responds. |
-| `INTERNET_TEST_PORT` | `80` | TCP port used for connectivity checks. |
-| `INTERNET_TEST_TIMEOUT_MS` | `2000` | Per-target connection timeout. |
-| `USE_PRODUCTION_TIMINGS` | `false` | Selects production timings when `true`; test timings when `false`. Set with `ROUTER_WATCHDOG_USE_PRODUCTION_TIMINGS`. |
-| `COMMAND_STARTED_TO_RELAY_DELAY_MS` | `750` | Delay between publishing command `STARTED` and cutting router power. |
-| `STARTUP_GRACE_PERIOD_MS` | timing profile | Initial wait before monitoring starts. |
-| `CHECK_INTERVAL_MS` | timing profile | Time between connectivity checks. |
-| `MAX_CONSECUTIVE_FAILURES` | timing profile | Failures required before router reboot. |
-| `ROUTER_POWER_OFF_TIME_MS` | timing profile | Time to keep router power off. |
-| `ROUTER_RECOVERY_WAIT_TIME_MS` | timing profile | Wait after router power is restored. |
-| `MQTT_HOST` | from secrets | MQTT broker host or IP address. |
-| `MQTT_PORT` | `1883` | MQTT broker port. |
-| `MQTT_USER` | from secrets | MQTT username. |
-| `MQTT_PASSWORD` | from secrets | MQTT password. |
-| `MQTT_TOPIC_PREFIX` | `router-watchdog` | Prefix for all firmware topics. |
-| `MQTT_BUFFER_SIZE` | `512` | MQTT packet buffer size. |
-| `MQTT_RECONNECT_INTERVAL_MS` | `5000` | Time between MQTT reconnect attempts. |
+| --- | ---: | --- |
+| `MQTT_PORT` | `3543` | MQTT over TLS listener. |
+| `MQTT_CA_CERT` | empty | Public private-CA certificate used to validate MQTT and OTA servers. |
+| `INTERNET_TEST_PORT` | `53` | TCP connectivity probe against configured DNS services. |
+| `INTERNET_TEST_TIMEOUT_MS` | `750` | Maximum blocking time for one target. |
+| `MAX_CONSECUTIVE_FAILURES` | profile | Failures before immediate recovery. |
+| `FAST_RECOVERY_ATTEMPTS` | `6` | Number of attempts in the fast phase. |
+| `FAST_RECOVERY_INTERVAL_MS` | 20 minutes | Observation window between attempts 1–6. |
+| `SLOW_RECOVERY_INTERVAL_MS` | 4 hours | Observation window after attempt 6. |
+| `ROUTER_POWER_OFF_TIME_MS` | profile | Exact router power-off duration. |
 
-Timing profiles:
+The Internet probe tests one target per loop iteration in round-robin order. A cycle
+succeeds on the first connection and fails only after all three targets fail. MQTT
+failure alone never counts as Internet failure and never triggers router recovery.
 
-| Setting | Test | Production |
-| --- | ---: | ---: |
-| `STARTUP_GRACE_PERIOD_MS` | `15000` | `60000` |
-| `CHECK_INTERVAL_MS` | `10000` | `30000` |
-| `MAX_CONSECUTIVE_FAILURES` | `3` | `5` |
-| `ROUTER_POWER_OFF_TIME_MS` | `10000` | `15000` |
-| `ROUTER_RECOVERY_WAIT_TIME_MS` | `10000` | `180000` |
+## Recovery Policy
 
-Read [docs/mqtt.md](docs/mqtt.md) for the topic contract, payloads, and command format.
+The states are `Monitoring`, `PowerOff`, and `RecoveryCooldown`.
 
-Heartbeat payload:
+1. At the failure threshold, attempt 1 starts immediately.
+2. The relay cuts power for `ROUTER_POWER_OFF_TIME_MS`.
+3. Power is restored and network checks continue throughout the cooldown.
+4. Recovery during the window resets failures and attempts immediately.
+5. Attempts 2–6 start no sooner than 20 minutes after the preceding power restore.
+6. After attempt 6, retries continue every four hours indefinitely.
+
+The fast-attempt counter saturates at six and is held only in RAM. Manual router or
+device reboot commands and OTA are rejected/deferred during recovery and cooldown.
+
+## MQTT/TLS Infrastructure
+
+The broker must use:
+
+```conf
+listener 3543
+allow_anonymous false
+password_file /etc/mosquitto/passwd
+acl_file /etc/mosquitto/acl
+cafile /etc/mosquitto/ca.crt
+certfile /etc/mosquitto/server.crt
+keyfile /etc/mosquitto/server.key
+```
+
+Create a private CA and issue a server certificate whose Subject Alternative Name
+contains the stable public HQ IP. Store only the public CA certificate in firmware;
+the CA and server private keys stay on secured infrastructure. The ESP synchronizes
+time through NTP before TLS validation and fails closed if time or CA is unavailable.
+If the public IP changes, reissue the certificate and update configuration.
+
+Example device ACL (replace the device ID):
+
+```conf
+user router-watchdog-001
+topic write router-watchdog/router-watchdog-001/heartbeat
+topic write router-watchdog/router-watchdog-001/availability
+topic write router-watchdog/router-watchdog-001/command-results
+topic write router-watchdog/router-watchdog-001/firmware/status
+topic read  router-watchdog/router-watchdog-001/commands
+topic read  router-watchdog/router-watchdog-001/firmware/desired
+```
+
+The Last Will remains retained `offline`. A failed retained `online` publication is
+retried every five seconds, without a tight loop. See [docs/mqtt.md](docs/mqtt.md) for
+the complete contract and rejection reasons.
+
+## OTA
+
+Publish retained desired state:
 
 ```json
 {
-  "deviceId": "router-watchdog-001",
-  "sequence": 1234,
-  "ip": "192.168.1.100",
-  "gateway": "192.168.1.1",
-  "wifiConnected": true,
-  "internetConnected": true,
-  "failures": 0,
-  "uptime": 123,
-  "rssi": -58,
-  "freeHeap": 41200,
-  "firmwareVersion": "0.1.0"
+  "version": "0.2.0",
+  "url": "https://203.0.113.10/firmware/router-watchdog-0.2.0.bin",
+  "sha256": "64-hexadecimal-characters"
 }
 ```
 
-Supported MQTT commands:
+HTTPS, certificate validation, known Internet access, inactive relay, idle operation,
+content length, available flash, and SHA-256 are mandatory. Status progresses through
+`ACCEPTED` and `DOWNLOADING`, or `FAILED`. Success is the next heartbeat containing
+the new `firmwareVersion`. The first OTA-capable build must be installed by USB.
 
-| Command | Behavior |
-| --- | --- |
-| `REBOOT_ROUTER` | Publishes `STARTED`, waits `COMMAND_STARTED_TO_RELAY_DELAY_MS`, then starts the relay recovery flow. |
-| `REBOOT_DEVICE` | Publishes `STARTED`, waits briefly, then restarts the ESP8266. |
+Generate the digest with:
 
-Heartbeats are skipped while MQTT is disconnected.
+```bash
+sha256sum .pio/build/esp12e/firmware.bin
+```
 
-## Build
+## Reproducible Build
+
+Platform and library versions are pinned in `platformio.ini`. Override the fallback
+release version from a CI/build environment with
+`ROUTER_WATCHDOG_FIRMWARE_VERSION`.
 
 ```bash
 pio run
 ```
 
-Current PlatformIO environment:
+The output is `.pio/build/esp12e/firmware.bin`.
 
-```ini
-[env:esp12e]
-platform = espressif8266
-board = esp12e
-framework = arduino
-upload_speed = 57600
-upload_resetmethod = nodemcu
-monitor_speed = 74880
-monitor_dtr = 0
-monitor_rts = 0
-lib_deps =
-    bblanchon/ArduinoJson
-    knolleary/PubSubClient
-```
+## Physical Acceptance Tests
 
-## Upload
-
-```bash
-pio run -t upload
-```
-
-## Serial Monitor
-
-```bash
-pio device monitor
-```
-
-Configured speed: `74880`.
-
-Typical startup output:
-
-```text
-[BOOT] Router watchdog starting
-[RELAY] Initializing
-[NETWORK] Initialization started
-[MQTT] Client initialized
-[WATCHDOG] Monitoring started
-[BOOT] Waiting for Wi-Fi startup grace period (15000 ms)
-```
-
-Typical healthy operation:
-
-```text
-[NETWORK] Wi-Fi connected | IP=192.168.1.100 | Gateway=192.168.1.1 | Internet=OK | Failures=0
-[MQTT] Connecting to 192.168.1.10:1883
-[MQTT] Connected
-```
-
-## Recovery Flow
-
-When connectivity fails `MAX_CONSECUTIVE_FAILURES` times in a row, the watchdog:
-
-1. Turns the relay on and cuts router power.
-2. Waits for `ROUTER_POWER_OFF_TIME_MS`.
-3. Turns the relay off and restores router power.
-4. Waits for `ROUTER_RECOVERY_WAIT_TIME_MS`.
-5. Resumes monitoring and waits for Wi-Fi plus internet confirmation.
-6. Clears failure state and allows future router reboot commands.
-
-The recovery flow is state-based and avoids long blocking delays in the main loop.
-
-## Future Improvements
-
-- Persist recent command IDs in LittleFS or EEPROM so duplicate command protection survives device restarts.
-- Tune production timing values after real router measurements.
-
-## Release Checklist
-
-- `src/config/AppSecrets.h` exists locally and contains real Wi-Fi/MQTT values.
-- Relay wiring matches `RELAY_GPIO` and `RELAY_ACTIVE_LOW`.
-- MQTT broker and consumers follow [docs/mqtt.md](docs/mqtt.md).
-- `pio run` succeeds.
-- Real credentials and private broker details are not committed.
+Before deployment, verify both relay polarities without the router attached, exact
+power-off timing, recovery during cooldown, six 20-minute attempts followed by
+four-hour attempts, command rejection during each destructive operation, invalid TLS
+certificate rejection, broker ACL isolation, and a real SHA-256-verified OTA cycle.
+These electrical, timing, broker, and certificate checks cannot be proven by compilation.
